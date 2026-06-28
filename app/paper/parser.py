@@ -141,20 +141,30 @@ class PaperParser:
 
         Looks for "Abstract" section and extracts until next major section.
         """
-        # Find "Abstract" heading
-        abstract_match = re.search(
-            r"(?:^|\n)(abstract)\s*(?:\n|:)(.*?)(?=\n(?:" + "|".join(self.SECTION_PATTERNS) + r"))",
-            text,
-            re.IGNORECASE | re.DOTALL,
-        )
+        lines = text.split("\n")
+        abstract_start = None
 
-        if abstract_match:
-            abstract_text = abstract_match.group(2).strip()
-            # Clean up extra whitespace
-            abstract_text = re.sub(r"\s+", " ", abstract_text)
-            return abstract_text
+        for index, line in enumerate(lines):
+            stripped = line.strip()
+            if self._is_section_heading(stripped, allowed_prefixes=("abstract",)):
+                abstract_start = index + 1
+                break
 
-        return None
+        if abstract_start is None:
+            return None
+
+        abstract_lines = []
+        for line in lines[abstract_start:]:
+            stripped = line.strip()
+            if stripped and self._is_section_heading(stripped):
+                break
+            abstract_lines.append(line)
+
+        abstract_text = "\n".join(abstract_lines).strip()
+        if not abstract_text:
+            return None
+
+        return re.sub(r"\s+", " ", abstract_text)
 
     def _extract_sections(self, text: str) -> List[Dict[str, str]]:
         """
@@ -167,10 +177,9 @@ class PaperParser:
         # Find all section headings
         section_starts = []
         for i, line in enumerate(text.split("\n")):
-            for pattern in self.section_patterns:
-                if pattern.match(line.strip()):
-                    section_starts.append((i, line.strip()))
-                    break
+            stripped = line.strip()
+            if self._is_section_heading(stripped):
+                section_starts.append((i, stripped))
 
         # Extract text for each section
         lines = text.split("\n")
@@ -196,22 +205,19 @@ class PaperParser:
         More sophisticated parsing (BibTeX, structured formats) can be added later.
         """
         references = []
+        lines = text.split("\n")
+        ref_start = None
 
-        # Find References section
-        ref_match = re.search(
-            r"(?:^|\n)(references?|bibliography)\s*(?:\n|:)(.*?)$",
-            text,
-            re.IGNORECASE | re.DOTALL,
-        )
+        for index, line in enumerate(lines):
+            stripped = line.strip()
+            if self._is_section_heading(stripped, allowed_prefixes=("references", "bibliography")):
+                ref_start = index + 1
+                break
 
-        if not ref_match:
+        if ref_start is None:
             return references
 
-        ref_section = ref_match.group(2).strip()
-
-        # Split into individual references (heuristic: numbered or bullet points)
-        # This is a simplified approach; real citation parsing is complex
-        ref_lines = ref_section.split("\n")
+        ref_lines = lines[ref_start:]
 
         for line in ref_lines:
             line = line.strip()
@@ -224,6 +230,19 @@ class PaperParser:
                 references.append(ref_dict)
 
         return references
+
+    def _is_section_heading(
+        self, line: str, allowed_prefixes: Tuple[str, ...] = None
+    ) -> bool:
+        """Return True when a stripped line looks like a known section heading."""
+        if not line:
+            return False
+
+        if allowed_prefixes is not None:
+            normalized = line.lower().rstrip(":")
+            return any(normalized.startswith(prefix) for prefix in allowed_prefixes)
+
+        return any(pattern.match(line) for pattern in self.section_patterns)
 
     def _parse_reference_line(self, line: str) -> Optional[Dict]:
         """
