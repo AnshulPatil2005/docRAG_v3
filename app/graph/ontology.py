@@ -22,6 +22,10 @@ class NodeType(str, Enum):
     """
     Allowed node types in research-paper graphs.
     
+    LEARNING POINT: Enums
+    We use Enum (Enumeration) for node types to ensure that we only use a predefined
+    set of names. This prevents typos (like "paper" vs "Paper") from breaking our graph.
+
     Each node represents a distinct concept or entity in the research domain.
     """
 
@@ -86,6 +90,9 @@ class EdgeType(str, Enum):
 
 
 # Valid combinations: (SourceNodeType, EdgeType) -> Set[TargetNodeType]
+# LEARNING POINT: Mapping Relationships
+# This dictionary defines the "rules" of our graph. For example, it says that
+# a PAPER can CITE another PAPER, but it cannot CITE a DATASET.
 VALID_EDGES = {
     # Paper relationships
     (NodeType.PAPER, EdgeType.CITES): {NodeType.PAPER},
