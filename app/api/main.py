@@ -12,7 +12,36 @@ logger = structlog.get_logger()
 # Setup Rate Limiting
 limiter = Limiter(key_func=get_remote_address)
 
-app = FastAPI(title="PDF RAG API")
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    LEARNING POINT: Lifespan Events
+    In modern FastAPI, the 'lifespan' context manager is the preferred way to handle
+    startup and shutdown logic. It replaces the older @app.on_event("startup") and
+    @app.on_event("shutdown") decorators.
+
+    Everything before 'yield' runs on STARTUP.
+    Everything after 'yield' runs on SHUTDOWN.
+    """
+    # STARTUP LOGIC
+    logger.info("Application starting up...")
+
+    # Setup directories for file uploads
+    import os
+    os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+
+    yield
+
+    # SHUTDOWN LOGIC
+    logger.info("Application shutting down...")
+
+app = FastAPI(
+    title="PDF RAG API",
+    lifespan=lifespan
+)
+
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -26,13 +55,6 @@ app.add_middleware(
 )
 
 app.include_router(router, prefix="/api/v1")
-
-@app.on_event("startup")
-async def startup_event():
-    logger.info("Application starting up...")
-    # Setup directories
-    import os
-    os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 
 @app.get("/")
 async def root():
