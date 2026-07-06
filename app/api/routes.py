@@ -6,9 +6,6 @@ import aiofiles
 from typing import Optional
 from app.core.config import settings
 from app.worker.celery_app import celery_app
-from app.services.vector_store import search_vectors
-from app.services.embeddings import get_model
-from app.services.llm import llm_client
 from pydantic import BaseModel
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -27,6 +24,10 @@ class ChatResponse(BaseModel):
 @router.post("/chat", response_model=ChatResponse)
 @limiter.limit("20/minute")
 async def chat(request: Request, body: ChatRequest):
+    from app.services.embeddings import get_model
+    from app.services.llm import llm_client
+    from app.services.vector_store import search_vectors
+
     # 1. Embed query
     model = get_model()
     query_vector = model.encode(body.query).tolist()
