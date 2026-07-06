@@ -17,15 +17,15 @@ class CitationExtractor:
 
     # Patterns for identifying the reference section
     REF_SECTION_PATTERNS = [
-        r"(?:^|\n)(References?|Bibliography|WORKS CITED)\s*(?:\n|:)",
+        r"(?:^|\n)\s*(References?|Bibliography|WORKS CITED)\s*(?:\n|:)",
     ]
 
     # Patterns for bibliography items
     # Typically: [1] Author, Title, Year.
     # Or: Author (Year). Title.
     BIB_ITEM_PATTERNS = [
-        r"(?:^|\n)\[(\d+)\]\s+(.*?)(?=\n\[\d+\]|\n\n|$)",  # [1] Style
-        r"(?:^|\n)(\d+)\.\s+(.*?)(?=\n\d+\.|\n\n|$)",      # 1. Style
+        r"(?:^|\n)\s*\[(\d+)\]\s+(.*?)(?=\n\s*\[\d+\]|\n\n|$)",  # [1] Style
+        r"(?:^|\n)\s*(\d+)\.\s+(.*?)(?=\n\s*\d+\.|\n\n|$)",      # 1. Style
     ]
 
     # Patterns for in-text mentions
