@@ -34,7 +34,7 @@ You'll see `async def` everywhere. This allows FastAPI to handle thousands of co
 
 ---
 
-## 3. Code Walkthrough: Phases 1–4
+## 3. Code Walkthrough: Phases 1–6
 
 ### Phase 2: The Ontology (`app/graph/ontology.py`)
 **Ontology** is just a fancy word for "a map of what things exist and how they connect."
@@ -54,6 +54,15 @@ This uses **Regular Expressions (Regex)**.
 - `extractor.py`: Looks for patterns like `(2021)`, `arXiv:2104.XXXXX`, or `DOI: 10.1101/...`.
 - `normalizer.py`: Ensures that "John Doe (2020)" and "Doe, J. 2020" are recognized as the same thing. This is crucial for building a clean graph.
 
+### Phase 5: Entity Extraction (`app/graph/entity_extractor.py`)
+This extracts important research concepts/entities (nodes) from the text.
+- To stay highly efficient, it uses robust, deterministic heuristics and regexes (e.g., matching common method suffixes like `model` or `architecture`, or known list terms like `Transformer` or `ImageNet`).
+
+### Phase 6: Relation Extraction (`app/graph/relation_extractor.py`)
+This extracts semantic connections (edges) between those nodes in the text.
+- **Linguistic Regex Heuristics**: It scans for sentences containing *two or more* of our extracted entities, and looks for semantic connector phrases (like `outperforms`, `evaluated on`, `extends`).
+- **Ontology Normalization Mapping**: Natural language relations are normalized to match the strict central ontology. For instance, if a `Method` is evaluated on a `Dataset`, the natural-language relationship "evaluated on" is automatically mapped to `USES_DATASET` to remain strictly compliant with the ontology rules.
+
 ---
 
 ## 4. How to Learn by Exploring
@@ -70,4 +79,4 @@ To understand how a request flows through the system:
 
 ---
 
-Next, we will be moving to **Phase 5: Entity Extraction**, where we use LLMs (like Llama 3) to automatically find `Methods` and `Datasets` inside the text!
+Next, we will be moving to **Phase 7: Paper Graph Builder**, where we convert extracted entities and relations into a single integrated graph representation for each paper!
