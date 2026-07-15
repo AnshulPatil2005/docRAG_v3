@@ -11,6 +11,7 @@ from app.paper.parser import PaperParser
 from app.citations.extractor import CitationExtractor
 from app.citations.normalizer import CitationNormalizer
 from app.graph.entity_extractor import EntityExtractor
+from app.graph.relation_extractor import RelationExtractor
 
 logger = get_task_logger(__name__)
 
@@ -50,6 +51,16 @@ def process_pdf_task(self, doc_id: str, file_path: str):
         entity_extractor = EntityExtractor()
         entities = entity_extractor.extract(parsed_result.to_dict())
 
+        # 4.5. Relation Extraction (Phase 6)
+        # EDUCATIONAL EXPLANATION:
+        # After finding the key nodes (Entities), we immediately run Relation Extraction
+        # to connect them together based on co-occurrence and grammatical relation patterns.
+        # This keeps our internal research paper graph coherent and strictly ontology-compliant.
+        self.update_state(state='PROCESSING', meta={'step': 'RELATIONS', 'doc_id': doc_id})
+        logger.info("Step 4.5: Relation Extraction")
+        relation_extractor = RelationExtractor()
+        relations = relation_extractor.extract(entities, parsed_result)
+
         self.update_state(state='PROCESSING', meta={'step': 'CHUNKING', 'doc_id': doc_id})
 
         # 5. Chunking
@@ -74,7 +85,8 @@ def process_pdf_task(self, doc_id: str, file_path: str):
             "doc_id": doc_id,
             "chunks_count": len(chunks),
             "citations_count": len(normalized_references),
-            "entities_count": len(entities)
+            "entities_count": len(entities),
+            "relations_count": len(relations)
         }
         
     except Exception as e:
