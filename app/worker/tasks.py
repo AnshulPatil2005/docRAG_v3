@@ -12,6 +12,7 @@ from app.citations.extractor import CitationExtractor
 from app.citations.normalizer import CitationNormalizer
 from app.graph.entity_extractor import EntityExtractor
 from app.graph.relation_extractor import RelationExtractor
+from app.graph.paper_graph_builder import PaperGraphBuilder
 
 logger = get_task_logger(__name__)
 
@@ -61,6 +62,35 @@ def process_pdf_task(self, doc_id: str, file_path: str):
         relation_extractor = RelationExtractor()
         relations = relation_extractor.extract(entities, parsed_result)
 
+        # 4.6. Paper Graph Builder (Phase 7)
+        # EDUCATIONAL EXPLANATION:
+        # This is where the magic of GraphRAG comes together! We combine all our extracted pieces:
+        # - Paper Metadata (Title, etc.)
+        # - Structured Sections (Introduction, Abstract, etc.)
+        # - Extracted Entities (Methods, Datasets, etc.)
+        # - Semantic Relations
+        # - Extracted Citations
+        # into a single, ontology-validated, deduplicated local graph.
+        # This graph is the building block for the global Neo4j citation network.
+        self.update_state(state='PROCESSING', meta={'step': 'BUILD_GRAPH', 'doc_id': doc_id})
+        logger.info("Step 4.6: Paper Graph Construction")
+        paper_metadata = {
+            "title": parsed_result.title,
+            "doi": "",  # To be enriched/resolved in later stages
+            "arxiv_id": "",
+            "year": 0,
+            "authors": [],
+        }
+        graph_builder = PaperGraphBuilder()
+        graph = graph_builder.build_graph(
+            paper_id=doc_id,
+            paper_metadata=paper_metadata,
+            sections=parsed_result.sections,
+            entities=entities,
+            relations=relations,
+            citations=normalized_references,
+        )
+
         self.update_state(state='PROCESSING', meta={'step': 'CHUNKING', 'doc_id': doc_id})
 
         # 5. Chunking
@@ -86,7 +116,9 @@ def process_pdf_task(self, doc_id: str, file_path: str):
             "chunks_count": len(chunks),
             "citations_count": len(normalized_references),
             "entities_count": len(entities),
-            "relations_count": len(relations)
+            "relations_count": len(relations),
+            "graph_nodes_count": len(graph["nodes"]),
+            "graph_edges_count": len(graph["edges"]),
         }
         
     except Exception as e:

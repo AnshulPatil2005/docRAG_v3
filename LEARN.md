@@ -34,7 +34,7 @@ You'll see `async def` everywhere. This allows FastAPI to handle thousands of co
 
 ---
 
-## 3. Code Walkthrough: Phases 1–6
+## 3. Code Walkthrough: Phases 1–7
 
 ### Phase 2: The Ontology (`app/graph/ontology.py`)
 **Ontology** is just a fancy word for "a map of what things exist and how they connect."
@@ -63,6 +63,12 @@ This extracts semantic connections (edges) between those nodes in the text.
 - **Linguistic Regex Heuristics**: It scans for sentences containing *two or more* of our extracted entities, and looks for semantic connector phrases (like `outperforms`, `evaluated on`, `extends`).
 - **Ontology Normalization Mapping**: Natural language relations are normalized to match the strict central ontology. For instance, if a `Method` is evaluated on a `Dataset`, the natural-language relationship "evaluated on" is automatically mapped to `USES_DATASET` to remain strictly compliant with the ontology rules.
 
+### Phase 7: Paper Graph Builder (`app/graph/paper_graph_builder.py`)
+This is the aggregator phase that binds all prior stages together into a single, ontology-compliant local paper graph structure containing `nodes` and `edges`.
+- **Node Hashing**: Creates unique, stable, and deterministic node IDs using SHA-256 hash digests of lowercase values. This prevents ID collisions and ensures identical entities across papers can easily merge later.
+- **Highest Confidence Deduplication**: If duplicate entities are extracted from different sections, the builder merges them into a single node representation, retaining the attributes of the extraction that has the highest confidence score.
+- **Parent-Child Linkages**: Automatically builds relational links between structural nodes (e.g., `Paper` -> `HAS_SECTION` -> `Section`, and `Section` -> `CONTAINS_CLAIM` -> `Claim`).
+
 ---
 
 ## 4. How to Learn by Exploring
@@ -79,4 +85,4 @@ To understand how a request flows through the system:
 
 ---
 
-Next, we will be moving to **Phase 7: Paper Graph Builder**, where we convert extracted entities and relations into a single integrated graph representation for each paper!
+Next, we will be moving to **Phase 8: Neo4j Integration**, where we persist these local paper graphs and connect them to create a global multi-paper citation network!
