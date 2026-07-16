@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     QDRANT_URL: str = "http://qdrant:6333"
     QDRANT_API_KEY: Optional[str] = None
     QDRANT_COLLECTION_NAME: str = "documents"
+    QDRANT_DISTANCE_METRIC: str = "cosine"  # "cosine" | "euclid" | "dot"
+    QDRANT_BATCH_SIZE: int = 128
 
     # Neo4j  (Phase 8)
     NEO4J_URI: str = "bolt://neo4j:7687"
@@ -28,8 +30,13 @@ class Settings(BaseSettings):
     LLM_PROVIDER: str = "ollama" # ollama or openrouter
     LLM_MODEL: str = "llama3" # e.g. "llama3" for ollama or "mistralai/mistral-7b-instruct" for openrouter
 
-    # Embeddings
+    # Embeddings (Phase 9)
+    EMBEDDING_PROVIDER: str = "local"   # "local" | "openai" | "stub"
     EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
+    EMBEDDING_BATCH_SIZE: int = 64
+
+    # OpenAI (for OpenAI embedder / LLM)
+    OPENAI_API_KEY: Optional[str] = None
 
     # RAG Config
     RAG_TOP_K: int = 5
