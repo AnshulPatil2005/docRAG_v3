@@ -1,95 +1,96 @@
 from app.worker.celery_app import celery_app
 from celery.utils.log import get_task_logger
-import time
 import os
-from app.services.ocr import extract_text_from_pdf
-from app.services.text_processing import chunk_text
-from app.services.embeddings import generate_embeddings
-from app.services.vector_store import upsert_vectors
+
 from app.core.config import settings
-from app.paper.parser import PaperParser
-from app.citations.extractor import CitationExtractor
-from app.citations.normalizer import CitationNormalizer
-from app.graph.entity_extractor import EntityExtractor
-from app.graph.relation_extractor import RelationExtractor
+from app.storage.neo4j_client import Neo4jClient
+from app.pipeline.paper_ingestion_pipeline import PaperIngestionPipeline
 
 logger = get_task_logger(__name__)
 
+
+def _create_neo4j_client() -> "Neo4jClient | None":
+    """
+    Attempt to connect to Neo4j.  Returns None on failure so that
+    the pipeline can still run the vector-RAG path without the graph.
+    """
+    try:
+        client = Neo4jClient(
+            uri=settings.NEO4J_URI,
+            user=settings.NEO4J_USER,
+            password=settings.NEO4J_PASSWORD,
+            database=settings.NEO4J_DATABASE,
+        )
+        client.connect()
+        client.init_schema()
+        logger.info("Neo4j connected and schema initialized")
+        return client
+    except Exception as exc:
+        logger.warning(
+            "Neo4j not available -- graph pipeline will be skipped: %s", exc
+        )
+        return None
+
+
 @celery_app.task(bind=True, name="app.worker.tasks.process_pdf_task", max_retries=3)
 def process_pdf_task(self, doc_id: str, file_path: str):
+    """
+    Process an uploaded PDF through the full ingestion pipeline.
+
+    Pipeline:  PDF -> OCR -> Parse -> Citations -> Entities -> Relations
+               -> Graph Build -> Neo4j -> Chunk -> Embed -> Qdrant
+
+    If Neo4j is unreachable the graph steps are gracefully skipped and
+    the vector-RAG path still completes.
+    """
     try:
-        logger.info(f"Starting processing for doc_id: {doc_id}")
-        self.update_state(state='PROCESSING', meta={'step': 'OCR', 'doc_id': doc_id})
-        
-        # 1. OCR
-        logger.info("Step 1: OCR Extraction")
-        pages_text = extract_text_from_pdf(file_path) # Returns list of (page_num, text)
-        
-        if not pages_text:
-            logger.warning("No text extracted from PDF.")
-            return {"status": "failed", "reason": "No text extracted"}
+        logger.info("Starting processing for doc_id: %s", doc_id)
+        self.update_state(state="PROCESSING", meta={"step": "INITIALIZING", "doc_id": doc_id})
 
-        # 2. Paper Parsing (Phase 3)
-        self.update_state(state='PROCESSING', meta={'step': 'PARSING', 'doc_id': doc_id})
-        logger.info("Step 2: Paper Parsing")
-        parser = PaperParser()
-        parsed_result = parser.parse(pages_text)
+        # --- Neo4j connection (optional) ---
+        neo4j_client = _create_neo4j_client()
 
-        # 3. Citation Extraction (Phase 4)
-        self.update_state(state='PROCESSING', meta={'step': 'CITATIONS', 'doc_id': doc_id})
-        logger.info("Step 3: Citation Extraction")
-        citation_extractor = CitationExtractor()
-        citation_normalizer = CitationNormalizer()
+        try:
+            pipeline = PaperIngestionPipeline(neo4j_client=neo4j_client)
+            result = pipeline.process(paper_id=doc_id, file_path=file_path)
+        finally:
+            # Always clean up the Neo4j connection
+            if neo4j_client is not None:
+                try:
+                    neo4j_client.close()
+                except Exception:
+                    pass
 
-        full_text = "\n\n".join([text for _, text in pages_text])
-        raw_citations = citation_extractor.extract(full_text)
-        normalized_references = citation_normalizer.normalize_list(raw_citations["references"])
+        # --- Build return value ---
+        if result.status == "FAILED":
+            return {
+                "status": "failed",
+                "doc_id": doc_id,
+                "steps": [
+                    {"step": s.step_name, "status": s.status.value, "error": s.error}
+                    for s in result.steps
+                ],
+            }
 
-        # 4. Entity Extraction (Phase 5)
-        self.update_state(state='PROCESSING', meta={'step': 'ENTITIES', 'doc_id': doc_id})
-        logger.info("Step 4: Entity Extraction")
-        entity_extractor = EntityExtractor()
-        entities = entity_extractor.extract(parsed_result.to_dict())
-
-        # 4.5. Relation Extraction (Phase 6)
-        # EDUCATIONAL EXPLANATION:
-        # After finding the key nodes (Entities), we immediately run Relation Extraction
-        # to connect them together based on co-occurrence and grammatical relation patterns.
-        # This keeps our internal research paper graph coherent and strictly ontology-compliant.
-        self.update_state(state='PROCESSING', meta={'step': 'RELATIONS', 'doc_id': doc_id})
-        logger.info("Step 4.5: Relation Extraction")
-        relation_extractor = RelationExtractor()
-        relations = relation_extractor.extract(entities, parsed_result)
-
-        self.update_state(state='PROCESSING', meta={'step': 'CHUNKING', 'doc_id': doc_id})
-
-        # 5. Chunking
-        logger.info("Step 5: Chunking")
-        chunks = chunk_text(pages_text, doc_id)
-        
-        self.update_state(state='PROCESSING', meta={'step': 'EMBEDDING', 'doc_id': doc_id})
-        
-        # 6. Embeddings
-        logger.info("Step 6: Generating Embeddings")
-        embeddings_data = generate_embeddings(chunks) # Returns list of (vector, payload)
-        
-        self.update_state(state='PROCESSING', meta={'step': 'UPSERTING', 'doc_id': doc_id})
-        
-        # 7. Upsert to Qdrant
-        logger.info("Step 7: Upserting to Qdrant")
-        upsert_vectors(settings.QDRANT_COLLECTION_NAME, embeddings_data)
-        
-        logger.info(f"Processing complete for doc_id: {doc_id}")
         return {
-            "status": "completed",
+            "status": "completed" if result.status == "COMPLETED" else "partial",
             "doc_id": doc_id,
-            "chunks_count": len(chunks),
-            "citations_count": len(normalized_references),
-            "entities_count": len(entities),
-            "relations_count": len(relations)
+            "chunks_count": result.vector_count,
+            "citations_count": result.citation_count,
+            "entities_count": result.entity_count,
+            "relations_count": result.relation_count,
+            "graph_nodes_count": result.graph_nodes_count,
+            "graph_edges_count": result.graph_edges_count,
+            "pipeline_steps": [
+                {
+                    "step": s.step_name,
+                    "status": s.status.value,
+                    "duration_ms": s.duration_ms,
+                }
+                for s in result.steps
+            ],
         }
-        
+
     except Exception as e:
-        logger.error(f"Error processing PDF: {e}")
-        # self.retry(exc=e, countdown=2 ** self.request.retries)
+        logger.error("Error processing PDF: %s", e)
         raise e

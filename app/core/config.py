@@ -1,7 +1,13 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
     # Redis
     REDIS_URL: str = "redis://redis:6379/0"
 
@@ -9,6 +15,12 @@ class Settings(BaseSettings):
     QDRANT_URL: str = "http://qdrant:6333"
     QDRANT_API_KEY: Optional[str] = None
     QDRANT_COLLECTION_NAME: str = "documents"
+
+    # Neo4j  (Phase 8)
+    NEO4J_URI: str = "bolt://neo4j:7687"
+    NEO4J_USER: str = "neo4j"
+    NEO4J_PASSWORD: str = "password"
+    NEO4J_DATABASE: str = "neo4j"
 
     # LLM
     OPENROUTER_API_KEY: Optional[str] = None
@@ -31,9 +43,5 @@ class Settings(BaseSettings):
     # Upload
     MAX_UPLOAD_MB: int = 50
     UPLOAD_DIR: str = "/app/uploads"
-
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
 
 settings = Settings()
