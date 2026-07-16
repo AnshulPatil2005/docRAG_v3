@@ -1,207 +1,217 @@
 """
-Citation Extractor Module
+Citation Extractor Module (Phase 4)
 
-Extracts bibliography items and in-text citations from research papers.
+Extracts raw reference strings and in-text citation mentions from paper text.
+Uses regex patterns to identify bibliography entries.
 """
 
 import re
+from typing import Dict, List
 import structlog
-from typing import List, Dict, Optional, Any
 
 logger = structlog.get_logger()
 
+
 class CitationExtractor:
     """
-    Extracts citations and references from paper text using regex.
+    Extract raw citations from research paper text.
+
+    Identifies two types of citations:
+    1. Reference entries in the bibliography section
+    2. In-text citation mentions (e.g. "[1]", "(Smith et al., 2020)")
     """
 
-    # Patterns for identifying the reference section
-    REF_SECTION_PATTERNS = [
-        r"(?:^|\n)\s*(References?|Bibliography|WORKS CITED)\s*(?:\n|:)",
+    # Patterns for reference section markers
+    REFERENCE_SECTION_PATTERNS = [
+        r"\breferences?\b",
+        r"\bbibliography\b",
     ]
 
-    # Patterns for bibliography items
-    # Typically: [1] Author, Title, Year.
-    # Or: Author (Year). Title.
-    BIB_ITEM_PATTERNS = [
-        r"(?:^|\n)\s*\[(\d+)\]\s+(.*?)(?=\n\s*\[\d+\]|\n\n|$)",  # [1] Style
-        r"(?:^|\n)\s*(\d+)\.\s+(.*?)(?=\n\s*\d+\.|\n\n|$)",      # 1. Style
+    # Patterns for individual reference entries (numbered or unnumbered)
+    REFERENCE_ENTRY_PATTERNS = [
+        # Numbered: [1] Author et al. (Year). Title...
+        r"^\s*\[(\d+)\]\s+.+",
+        # Unnumbered starting with author surname + year
+        r"^\s*[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s*[,.(]\s*(?:19|20)\d{2}\b.+",
+        # DOI-based
+        r"^\s*.*?(?:doi|DOI)[\s:]*10\.\d{4,}/\S+",
+        # arXiv-based
+        r"^\s*.*?arXiv[\s:]*\d{4}\.\d{4,5}",
     ]
 
-    # Patterns for in-text mentions
-    # [1], [1, 2], [1-3]
-    # (Author, 2020)
-    MENTION_PATTERNS = [
-        r"\[(\d+(?:,\s*\d+|-\d+)*)\]",
-        r"\(([^)]*?\d{4}[^)]*?)\)",
+    # In-text citation patterns
+    IN_TEXT_PATTERNS = [
+        # Numeric: [1], [1,2], [1-3]
+        r"\[(\d+(?:\s*[,;]\s*\d+)*(?:\s*[-]\s*\d+)?)\]",
+        # Author-year: (Smith et al., 2020)
+        r"\((?:[A-Z][a-z]+(?:\s+(?:et\s+al\.?|[A-Z][a-z]+))*,\s*)*(?:19|20)\d{2}\)",
+        # Author-only: Smith et al. (2020)
+        r"[A-Z][a-z]+(?:\s+(?:et\s+al\.?))?\s*\((?:19|20)\d{2}\)",
     ]
 
-    def __init__(self):
-        self.ref_section_regex = [re.compile(p, re.IGNORECASE | re.DOTALL) for p in self.REF_SECTION_PATTERNS]
-
-    def extract(self, text: str) -> Dict[str, Any]:
+    def extract(self, text: str) -> Dict[str, List]:
         """
-        Extract bibliography and mentions from full text.
+        Extract citations from full paper text.
+
+        Args:
+            text: Full text of the paper (all pages concatenated)
+
+        Returns:
+            Dict with keys:
+            - "references": List of raw reference strings found in bibliography
+            - "mentions": List of in-text citation strings with positions
         """
-        ref_section = self._find_reference_section(text)
-        if not ref_section:
-            logger.warning("reference_section_not_found")
+        if not text:
             return {"references": [], "mentions": []}
 
-        references = self._parse_bibliography(ref_section)
-        mentions = self._find_mentions(text, references)
+        references = self._extract_references(text)
+        mentions = self._extract_mentions(text)
 
-        return {
-            "references": references,
-            "mentions": mentions
-        }
+        logger.info(
+            "citations_extracted",
+            references=len(references),
+            mentions=len(mentions),
+        )
 
-    def _find_reference_section(self, text: str) -> Optional[str]:
-        """Find the start of the reference section and return everything after it."""
-        for pattern in self.ref_section_regex:
-            match = pattern.search(text)
-            if match:
-                return text[match.end():].strip()
-        return None
+        return {"references": references, "mentions": mentions}
 
-    def _parse_bibliography(self, ref_text: str) -> List[Dict[str, Any]]:
-        """Parse the bibliography section into individual references."""
+    def _extract_references(self, text: str) -> List[Dict]:
+        """
+        Extract individual reference entries from the bibliography section.
+        Returns list of dicts with 'raw_text' and 'ref_index' if numbered.
+        """
+        lines = text.split("\n")
         references = []
+        in_ref_section = False
+        ref_entry_pattern = re.compile(
+            "|".join(f"({p})" for p in self.REFERENCE_ENTRY_PATTERNS),
+            re.MULTILINE,
+        )
 
-        # Try to find numbered items first
-        found_numbered = False
-        for pattern in self.BIB_ITEM_PATTERNS:
-            regex = re.compile(pattern, re.DOTALL)
-            matches = list(regex.finditer(ref_text))
-            if matches:
-                found_numbered = True
-                for match in matches:
-                    ref_id = match.group(1)
-                    content = match.group(2).strip()
-                    ref_data = self._parse_reference_content(content)
-                    ref_data["ref_id"] = ref_id
-                    references.append(ref_data)
-                break
+        for i, line in enumerate(lines):
+            stripped = line.strip()
 
-        # If no numbered items, split by double newline as a fallback
-        if not found_numbered:
-            blocks = re.split(r"\n\s*\n", ref_text)
-            for i, block in enumerate(blocks):
-                content = block.strip()
-                if len(content) > 10:
-                    ref_data = self._parse_reference_content(content)
-                    ref_data["ref_id"] = str(i + 1)
-                    references.append(ref_data)
+            # Detect reference section start
+            if not in_ref_section:
+                if any(
+                    re.search(p, stripped, re.IGNORECASE)
+                    for p in self.REFERENCE_SECTION_PATTERNS
+                ) and len(stripped) < 30:
+                    in_ref_section = True
+                continue
+
+            # Skip empty lines and section-like headings after ref section
+            if not stripped:
+                continue
+            if any(
+                re.search(rf"^{p}$", stripped, re.IGNORECASE)
+                for p in self.REFERENCE_SECTION_PATTERNS
+            ):
+                continue
+
+            # Check if this line looks like a reference entry
+            if ref_entry_pattern.match(stripped):
+                ref_entry = {"raw_text": stripped, "line_number": i}
+
+                # Try to extract reference index from numbered refs [1], [2], etc.
+                idx_match = re.match(r"^\s*\[(\d+)\]", stripped)
+                if idx_match:
+                    ref_entry["ref_index"] = int(idx_match.group(1))
+                    ref_entry["ref_id"] = f"ref_{idx_match.group(1)}"
+
+                # Extract DOI if present
+                doi_match = re.search(
+                    r"(?:doi|DOI)[\s:]*10\.(\d{4,})/(\S+)", stripped, re.IGNORECASE
+                )
+                if doi_match:
+                    ref_entry["doi"] = f"10.{doi_match.group(1)}/{doi_match.group(2)}"
+
+                # Extract arXiv ID if present
+                arxiv_match = re.search(
+                    r"arXiv[\s.:]*(\d{4}\.\d{4,5})", stripped, re.IGNORECASE
+                )
+                if arxiv_match:
+                    ref_entry["arxiv_id"] = arxiv_match.group(1)
+
+                # Extract year
+                year_match = re.search(r"\b(19|20)\d{2}\b", stripped)
+                if year_match:
+                    ref_entry["year"] = int(year_match.group(0))
+
+                # Try to extract title (text between quotes or after year+period)
+                title = self._extract_title_from_ref(stripped)
+                if title:
+                    ref_entry["title"] = title
+
+                # Try to extract authors
+                authors = self._extract_authors_from_ref(stripped)
+                if authors:
+                    ref_entry["authors"] = authors
+
+                references.append(ref_entry)
 
         return references
 
-    def _parse_reference_content(self, content: str) -> Dict[str, Any]:
-        """Extract metadata from a single reference string."""
-        ref = {
-            "title": None,
-            "authors": [],
-            "year": None,
-            "doi": None,
-            "arxiv_id": None,
-            "raw": content
-        }
-
-        # Normalize whitespace
-        content = re.sub(r"\s+", " ", content)
-
-        # DOI
-        doi_match = re.search(r"doi:\s*([\d.]+/[\w./-]+)", content, re.IGNORECASE)
-        if not doi_match:
-             doi_match = re.search(r"https?://(?:dx\.)?doi\.org/([\d.]+/[\w./-]+)", content)
-        if doi_match:
-            ref["doi"] = doi_match.group(1).strip()
-
-        # arXiv
-        arxiv_match = re.search(r"arxiv:\s*(\d+\.\d+)", content, re.IGNORECASE)
-        if not arxiv_match:
-            arxiv_match = re.search(r"abs/(\d+\.\d+)", content)
-        if arxiv_match:
-            ref["arxiv_id"] = arxiv_match.group(1).strip()
-
-        # Year
-        year_match = re.search(r"\b(19|20)\d{2}\b", content)
-        if year_match:
-            ref["year"] = int(year_match.group(0))
-
-        # Title and Authors - complex with regex, but let's do a best effort
-        # Heuristic: Title is often in quotes or follows authors and a year
-        title_match = re.search(r'["\u201c](.*?)["\u201d]', content)
-        if title_match:
-            ref["title"] = title_match.group(1).strip()
-
-        # Simple split for authors (everything before the first year or title)
-        parts = []
-        if ref["year"]:
-            parts = content.split(str(ref["year"]), 1)
-        elif ref["title"]:
-            parts = content.split(ref["title"], 1)
-
-        if parts:
-            authors_part = parts[0].strip(" ,.")
-            # Remove leading numbers/brackets if any
-            authors_part = re.sub(r"^\[\d+\]\s*", "", authors_part)
-            authors_part = re.sub(r"^\d+\.\s*", "", authors_part)
-
-            # Split by common separators
-            author_list = re.split(r",\s*|\s+and\s+", authors_part)
-            ref["authors"] = [a.strip() for a in author_list if a.strip() and len(a.strip()) > 1]
-
-        # If title still None, try another heuristic: after authors
-        if not ref["title"] and parts and len(parts) > 1:
-            title_part = parts[1].strip(" ,.")
-            # Take first sentence or first 100 chars
-            title_match = re.search(r"^(.*?)\.", title_part)
-            if title_match:
-                ref["title"] = title_match.group(1).strip()
-            else:
-                ref["title"] = title_part[:100].strip()
-
-        # Final fallback for title
-        if not ref["title"]:
-            ref["title"] = content[:100].strip()
-
-        return ref
-
-    def _find_mentions(self, text: str, references: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Find where references are mentioned in the text."""
+    def _extract_mentions(self, text: str) -> List[Dict]:
+        """Extract in-text citation mentions with their positions."""
         mentions = []
 
-        # Create a mapping of ref_id to reference for quick lookup
-        ref_map = {ref["ref_id"]: ref for ref in references if ref.get("ref_id")}
+        for pattern in self.IN_TEXT_PATTERNS:
+            for match in re.finditer(pattern, text):
+                mentions.append({
+                    "text": match.group(0),
+                    "start": match.start(),
+                    "end": match.end(),
+                })
 
-        for pattern in self.MENTION_PATTERNS:
-            regex = re.compile(pattern)
-            for match in regex.finditer(text):
-                mention_text = match.group(0)
-                content = match.group(1)
+        # Sort by position and deduplicate overlapping mentions
+        mentions.sort(key=lambda m: m["start"])
+        deduped = []
+        for m in mentions:
+            if not deduped or m["start"] >= deduped[-1]["end"]:
+                deduped.append(m)
 
-                # Handle [1, 2, 3] or [1-3]
-                ids = []
-                if "-" in content and re.match(r"^\d+-\d+$", content):
-                    start, end = map(int, content.split("-"))
-                    ids = [str(i) for i in range(start, end + 1)]
-                else:
-                    ids = [i.strip() for i in re.split(r",\s*", content)]
+        return deduped
 
-                # Context (surrounding text)
-                start, end = match.span()
-                context_start = max(0, start - 100)
-                context_end = min(len(text), end + 100)
-                context = text[context_start:context_end].strip()
+    def _extract_title_from_ref(self, raw: str) -> str:
+        """Try to extract a paper title from a raw reference string."""
+        # Try quoted title first
+        title_match = re.search(r'"([^"]+)"', raw)
+        if title_match:
+            return title_match.group(1).strip()
 
-                for ref_id in ids:
-                    if ref_id in ref_map:
-                        mentions.append({
-                            "ref_id": ref_id,
-                            "mention_text": mention_text,
-                            "context": context,
-                            "start_offset": start,
-                            "end_offset": end
-                        })
+        title_match = re.search(r"'([^']+)'", raw)
+        if title_match:
+            return title_match.group(1).strip()
 
-        return mentions
+        # Fallback: text after year + period/comma
+        year_match = re.search(r"(?:19|20)\d{2}[.,)\]]\s*(.+?)(?:\.\s|$)", raw)
+        if year_match:
+            title = year_match.group(1).strip()
+            # Remove common trailing patterns
+            title = re.sub(r"\s*(?:doi|arXiv|available|retrieved|http).*$", "", title, flags=re.IGNORECASE)
+            if 5 < len(title) < 300:
+                return title
+
+        return ""
+
+    def _extract_authors_from_ref(self, raw: str) -> List[str]:
+        """Try to extract author names from a raw reference string."""
+        authors = []
+
+        # Simple heuristic: text before the year
+        year_match = re.search(r"(?:19|20)\d{2}", raw)
+        if year_match:
+            before_year = raw[:year_match.start()]
+            # Split by common separators
+            parts = re.split(r"\s*[,;]\s*", before_year)
+            for part in parts:
+                part = part.strip()
+                # Remove reference index [1]
+                part = re.sub(r"^\[\d+\]\s*", "", part)
+                # Remove common suffixes
+                part = re.sub(r"\s*(?:and|&)\s*$", "", part)
+                if part and 2 < len(part) < 80 and not re.match(r"^\d+$", part):
+                    authors.append(part)
+
+        return authors

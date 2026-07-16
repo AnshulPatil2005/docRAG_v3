@@ -13,6 +13,23 @@ services:
     volumes:
       - qdrant_data:/qdrant/storage
 
+  neo4j:
+    image: neo4j:5-community
+    ports:
+      - "7474:7474"   # Browser UI
+      - "7687:7687"   # Bolt protocol
+    environment:
+      - NEO4J_AUTH=neo4j/password
+      - NEO4J_PLUGINS=["apoc"]
+    volumes:
+      - neo4j_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p password 'RETURN 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
   ollama:
     image: ollama/ollama:latest
     ports:
@@ -39,8 +56,12 @@ services:
       - .:/app
       - uploads_data:/app/uploads
     depends_on:
-      - redis
-      - qdrant
+      redis:
+        condition: service_started
+      qdrant:
+        condition: service_started
+      neo4j:
+        condition: service_healthy
 
   worker:
     build: .
@@ -55,8 +76,12 @@ services:
       - torch_cache:/root/.cache/torch
       - huggingface_cache:/root/.cache/huggingface
     depends_on:
-      - redis
-      - qdrant
+      redis:
+        condition: service_started
+      qdrant:
+        condition: service_started
+      neo4j:
+        condition: service_healthy
 
   frontend:
     build: ./frontend-angular
@@ -68,6 +93,7 @@ services:
 volumes:
   redis_data:
   qdrant_data:
+  neo4j_data:
   ollama_data:
   uploads_data:
   torch_cache:
