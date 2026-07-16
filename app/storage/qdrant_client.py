@@ -74,15 +74,30 @@ class QdrantClientWrapper:
             logger.info("qdrant_connected", url=self._url)
 
     def close(self) -> None:
-        """Close the Qdrant client and release resources."""
-        if self._client is not None:
+        """Close the Qdrant client and release all underlying resources."""
+        client = self._client
+        self._client = None  # prevent further use immediately
+
+        if client is not None:
             try:
-                self._client.close()
+                client.close()
             except Exception as exc:
                 logger.warning("qdrant_close_error", error=str(exc))
-            finally:
-                self._client = None
-            logger.info("qdrant_closed")
+
+            # Also close the underlying HTTP/gRPC transport if accessible.
+            for attr in ("_client", "grpc_channel", "_grpc_channel"):
+                transport = getattr(client, attr, None)
+                if transport is not None and hasattr(transport, "close"):
+                    try:
+                        transport.close()
+                    except Exception as exc:
+                        logger.warning(
+                            "qdrant_transport_close_error",
+                            transport=attr,
+                            error=str(exc),
+                        )
+
+        logger.info("qdrant_closed")
 
     def __enter__(self):
         self.connect()
@@ -153,6 +168,45 @@ class QdrantClientWrapper:
                     f"new_dim={vector_dim}).  Manually delete the "
                     f"collection and retry."
                 ) from exc
+
+            # Collection was deleted successfully; recreate with new
+            # dimensions.  If this fails the collection is gone —
+            # the error message must make that clear.
+            try:
+                self._client.create_collection(
+                    collection_name=collection_name,
+                    vectors_config=qmodels.VectorParams(
+                        size=vector_dim,
+                        distance=qdist,
+                        hnsw_config=qmodels.HnswConfigDiff(
+                            ef_construct=DEFAULT_HNSW_EF_CONSTRUCT,
+                            m=DEFAULT_HNSW_M,
+                        ),
+                    ),
+                )
+            except Exception as exc:
+                logger.error(
+                    "qdrant_collection_recreate_failed_after_delete",
+                    collection=collection_name,
+                    old_dim=existing_dim,
+                    new_dim=vector_dim,
+                    error=str(exc),
+                )
+                raise RuntimeError(
+                    f"Collection '{collection_name}' was deleted "
+                    f"(old_dim={existing_dim}) but recreation with "
+                    f"new_dim={vector_dim} failed: {exc}.  "
+                    f"The collection no longer exists — retry or "
+                    f"manually recreate it."
+                ) from exc
+
+            logger.info(
+                "qdrant_collection_recreated",
+                collection=collection_name,
+                old_dim=existing_dim,
+                new_dim=vector_dim,
+            )
+            return True
         except UnexpectedResponse as exc:
             if exc.status_code == 404:
                 logger.info(
