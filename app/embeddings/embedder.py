@@ -164,8 +164,20 @@ class OpenAIEmbedder(EmbedderBackend):
         self._max_retries = max_retries
         self._dim = self._KNOWN_DIMS.get(model_name, 1536)
 
+        if not self._api_key:
+            raise ValueError(
+                "OpenAI embedder requires an API key.  "
+                "Set OPENAI_API_KEY env var or pass api_key=."
+            )
+
     def embed(self, texts: List[str]) -> List[List[float]]:
         import openai  # heavy import
+
+        if not self._api_key:
+            raise ValueError(
+                "OpenAI embedder has no API key configured.  "
+                "Cannot call embed()."
+            )
 
         client = openai.OpenAI(api_key=self._api_key)
 

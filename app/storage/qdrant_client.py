@@ -74,11 +74,22 @@ class QdrantClientWrapper:
             logger.info("qdrant_connected", url=self._url)
 
     def close(self) -> None:
-        """Close the Qdrant client."""
+        """Close the Qdrant client and release resources."""
         if self._client is not None:
-            self._client.close()
-            self._client = None
+            try:
+                self._client.close()
+            except Exception as exc:
+                logger.warning("qdrant_close_error", error=str(exc))
+            finally:
+                self._client = None
             logger.info("qdrant_closed")
+
+    def __enter__(self):
+        self.connect()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        self.close()
 
     def _ensure_connected(self) -> None:
         if self._client is None:
@@ -128,7 +139,20 @@ class QdrantClientWrapper:
                 old_dim=existing_dim,
                 new_dim=vector_dim,
             )
-            self._client.delete_collection(collection_name)
+            try:
+                self._client.delete_collection(collection_name)
+            except Exception as exc:
+                logger.error(
+                    "qdrant_collection_delete_failed_during_recreate",
+                    collection=collection_name,
+                    error=str(exc),
+                )
+                raise RuntimeError(
+                    f"Cannot recreate collection '{collection_name}': "
+                    f"delete failed (old_dim={existing_dim}, "
+                    f"new_dim={vector_dim}).  Manually delete the "
+                    f"collection and retry."
+                ) from exc
         except UnexpectedResponse as exc:
             if exc.status_code == 404:
                 logger.info(
@@ -138,17 +162,29 @@ class QdrantClientWrapper:
             else:
                 raise
 
-        self._client.create_collection(
-            collection_name=collection_name,
-            vectors_config=qmodels.VectorParams(
-                size=vector_dim,
-                distance=qdist,
-                hnsw_config=qmodels.HnswConfigDiff(
-                    ef_construct=DEFAULT_HNSW_EF_CONSTRUCT,
-                    m=DEFAULT_HNSW_M,
+        try:
+            self._client.create_collection(
+                collection_name=collection_name,
+                vectors_config=qmodels.VectorParams(
+                    size=vector_dim,
+                    distance=qdist,
+                    hnsw_config=qmodels.HnswConfigDiff(
+                        ef_construct=DEFAULT_HNSW_EF_CONSTRUCT,
+                        m=DEFAULT_HNSW_M,
+                    ),
                 ),
-            ),
-        )
+            )
+        except Exception as exc:
+            logger.error(
+                "qdrant_collection_create_failed",
+                collection=collection_name,
+                dim=vector_dim,
+                error=str(exc),
+            )
+            raise RuntimeError(
+                f"Failed to create collection '{collection_name}' "
+                f"with dim={vector_dim}: {exc}"
+            ) from exc
         logger.info(
             "qdrant_collection_created",
             collection=collection_name,

@@ -268,3 +268,68 @@ class TestHealthCheck:
         client = QdrantClientWrapper(url="http://localhost:6333")
 
         assert client.health_check() is False
+
+
+# ======================================================================
+# Context manager
+# ======================================================================
+
+class TestContextManager:
+    @patch("app.storage.qdrant_client.QdrantDriver")
+    def test_context_manager_calls_close(self, MockDriver):
+        mock_client = MockDriver.return_value
+
+        from app.storage.qdrant_client import QdrantClientWrapper
+        with QdrantClientWrapper(url="http://localhost:6333") as client:
+            assert client._client is not None
+
+        mock_client.close.assert_called_once()
+        assert client._client is None
+
+    @patch("app.storage.qdrant_client.QdrantDriver")
+    def test_close_handles_exception_gracefully(self, MockDriver):
+        mock_client = MockDriver.return_value
+        mock_client.close.side_effect = Exception("connection reset")
+
+        from app.storage.qdrant_client import QdrantClientWrapper
+        client = QdrantClientWrapper(url="http://localhost:6333")
+        client.connect()
+
+        # Should NOT raise — error is logged but swallowed
+        client.close()
+        assert client._client is None
+
+
+# ======================================================================
+# Dimension mismatch error handling
+# ======================================================================
+
+class TestDimensionMismatchErrors:
+    @patch("app.storage.qdrant_client.QdrantDriver")
+    def test_delete_failure_during_recreate_raises_runtime_error(self, MockDriver):
+        mock_client = MockDriver.return_value
+        mock_client.get_collection.return_value = _make_mock_collection_info(dim=768)
+        mock_client.delete_collection.side_effect = Exception("timeout")
+
+        from app.storage.qdrant_client import QdrantClientWrapper
+        client = QdrantClientWrapper(url="http://localhost:6333")
+        client.connect()
+
+        with pytest.raises(RuntimeError, match="Cannot recreate collection"):
+            client.ensure_collection("test-col", vector_dim=384)
+
+    @patch("app.storage.qdrant_client.QdrantDriver")
+    def test_create_failure_after_delete_raises_runtime_error(self, MockDriver):
+        mock_client = MockDriver.return_value
+        mock_client.get_collection.return_value = _make_mock_collection_info(dim=768)
+        mock_client.create_collection.side_effect = Exception("server error")
+
+        from app.storage.qdrant_client import QdrantClientWrapper
+        client = QdrantClientWrapper(url="http://localhost:6333")
+        client.connect()
+
+        with pytest.raises(RuntimeError, match="Failed to create collection"):
+            client.ensure_collection("test-col", vector_dim=384)
+
+        # Delete was called (collection is now gone), but create failed
+        mock_client.delete_collection.assert_called_once_with("test-col")

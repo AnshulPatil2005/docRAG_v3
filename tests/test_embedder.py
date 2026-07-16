@@ -103,6 +103,14 @@ class TestOpenAIEmbedder:
         )
         assert embedder.embed_dim == 1536
 
+    def test_raises_value_error_when_no_api_key(self):
+        """OpenAI embedder must fail fast if no API key is available."""
+        import os
+        # Ensure no env var leaks in
+        os.environ.pop("OPENAI_API_KEY", None)
+        with pytest.raises(ValueError, match="API key"):
+            OpenAIEmbedder(model_name="text-embedding-3-small", api_key=None)
+
     @patch("app.embeddings.embedder.openai")
     def test_embed_calls_api(self, mock_openai):
         mock_client = MagicMock()
