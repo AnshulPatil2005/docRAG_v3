@@ -80,15 +80,10 @@ class StubEmbedder(EmbedderBackend):
         vectors: List[List[float]] = []
         for text in texts:
             h = hashlib.sha256(text.encode()).digest()
-            # Expand hash bytes into ``dim`` floats in [0, 1)
-            floats: List[float] = []
-            idx = 0
-            while len(floats) < self._dim:
-                floats.extend(
-                    b / 255.0 for b in h[idx : idx + self._dim]
-                )
-                idx += self._dim
-            vectors.append(floats[: self._dim])
+            # Expand the 32-byte digest into `dim` floats in [0, 1) by
+            # cycling through it (sha256 output is always 32 bytes, which
+            # is shorter than most embedding dimensions).
+            vectors.append([h[i % len(h)] / 255.0 for i in range(self._dim)])
         return vectors
 
     @property

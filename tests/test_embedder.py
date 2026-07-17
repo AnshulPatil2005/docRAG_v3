@@ -111,10 +111,10 @@ class TestOpenAIEmbedder:
         with pytest.raises(ValueError, match="API key"):
             OpenAIEmbedder(model_name="text-embedding-3-small", api_key=None)
 
-    @patch("app.embeddings.embedder.openai")
-    def test_embed_calls_api(self, mock_openai):
+    @patch("openai.OpenAI")
+    def test_embed_calls_api(self, mock_openai_cls):
         mock_client = MagicMock()
-        mock_openai.OpenAI.return_value = mock_client
+        mock_openai_cls.return_value = mock_client
         mock_resp = MagicMock()
         mock_resp.data = [
             MagicMock(embedding=[0.1] * 1536),
