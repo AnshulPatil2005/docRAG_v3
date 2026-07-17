@@ -120,14 +120,58 @@ class GraphRepository:
     # ------------------------------------------------------------------
 
     def get_paper_graph(self, paper_id: str) -> Dict[str, Any]:
-        """Return the full graph (nodes + edges) for a paper."""
+        """
+        Return the full graph (nodes + edges) directly connected to a paper.
+
+        Returns ``{}`` if the paper does not exist, otherwise
+        ``{"nodes": [...], "edges": [...]}`` where each node has at least
+        ``id`` / ``type`` and each edge has
+        ``source`` / ``source_type`` / ``type`` / ``target`` / ``target_type``.
+        """
         cypher = (
             "MATCH (p:Paper {paper_id: $pid}) "
             "OPTIONAL MATCH (p)-[r]-(n) "
-            "RETURN p, r, n"
+            "RETURN p, labels(p) AS p_labels, "
+            "type(r) AS r_type, properties(r) AS r_props, "
+            "startNode(r) AS r_start, labels(startNode(r)) AS r_start_labels, "
+            "endNode(r) AS r_end, labels(endNode(r)) AS r_end_labels"
         )
         rows = self._client.query(cypher, {"pid": paper_id})
-        return rows[0] if rows else {}
+        if not rows or rows[0].get("p") is None:
+            return {}
+
+        nodes: Dict[str, Dict[str, Any]] = {}
+        edges: List[Dict[str, Any]] = []
+
+        def add_node(props: Optional[Dict[str, Any]], labels: Optional[List[str]]) -> Optional[str]:
+            if not props:
+                return None
+            label = labels[0] if labels else "Entity"
+            key_prop = NODE_KEY_MAP.get(label, "name")
+            node_id = props.get(key_prop)
+            if node_id is not None and node_id not in nodes:
+                nodes[node_id] = {"id": node_id, "type": label, **dict(props)}
+            return node_id
+
+        add_node(dict(rows[0]["p"]), rows[0]["p_labels"])
+
+        for row in rows:
+            if row.get("r_type") is None:
+                continue
+            start_labels = row.get("r_start_labels") or ["Entity"]
+            end_labels = row.get("r_end_labels") or ["Entity"]
+            start_id = add_node(dict(row["r_start"]), start_labels)
+            end_id = add_node(dict(row["r_end"]), end_labels)
+            edges.append({
+                "source": start_id,
+                "source_type": start_labels[0],
+                "type": row["r_type"],
+                "target": end_id,
+                "target_type": end_labels[0],
+                "properties": row.get("r_props") or {},
+            })
+
+        return {"nodes": list(nodes.values()), "edges": edges}
 
     # ------------------------------------------------------------------
     # Read operations  -- citation graph

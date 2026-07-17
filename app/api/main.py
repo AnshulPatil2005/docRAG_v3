@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes import router
+from app.api.graph_routes import router as graph_router
 from app.core.config import settings
 import structlog
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -55,6 +56,7 @@ app.add_middleware(
 )
 
 app.include_router(router, prefix="/api/v1")
+app.include_router(graph_router, prefix="/api/v1")
 
 @app.get("/")
 async def root():
