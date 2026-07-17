@@ -148,9 +148,9 @@ async def graph_query(
         "sources": generated["sources"],
         "retrieval_trace": {
             "query_type": retrieval_result["query_type"],
-            "graph_facts_count": len(retrieval_result["graph_facts"]),
-            "vector_results_count": len(retrieval_result["vector_results"]),
-            "citation_paths_count": len(retrieval_result["citation_paths"]),
+            "graph_facts": generated["graph_facts_used"],
+            "vector_results": retrieval_result["vector_results"],
+            "citation_paths": retrieval_result["citation_paths"],
             "source_paper_ids": retrieval_result["source_paper_ids"],
             "confidence_notes": generated["confidence_notes"],
         },

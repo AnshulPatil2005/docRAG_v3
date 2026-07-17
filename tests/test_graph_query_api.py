@@ -70,7 +70,7 @@ class TestGraphQueryEndpoint:
         assert body["answer"] == GENERATED_ANSWER["answer"]
         assert body["sources"] == [{"paper_id": "p1", "title": "BERT paper"}]
         assert body["retrieval_trace"]["query_type"] == "ENTITY_LOOKUP"
-        assert body["retrieval_trace"]["graph_facts_count"] == 1
+        assert body["retrieval_trace"]["graph_facts"] == RETRIEVAL_RESULT["graph_facts"]
         assert body["retrieval_trace"]["source_paper_ids"] == ["p1"]
 
         mock_hybrid.retrieve.assert_called_once_with("What is BERT?", top_k=5)
