@@ -7,7 +7,10 @@ import {
   ChatRequest,
   ChatResponse,
   RecentTask,
-  HealthStatus
+  HealthStatus,
+  GraphQueryRequest,
+  GraphQueryResponse,
+  PaperGraphResponse
 } from '../models/api.models';
 
 const STORAGE_KEY = 'rag_recent_tasks';
@@ -99,6 +102,18 @@ export class ApiService {
 
   chat(request: ChatRequest): Observable<ChatResponse> {
     return this.http.post<ChatResponse>(`${this.apiUrl()}/api/v1/chat`, request).pipe(
+      catchError(this.handleError)
+    );
+  }
+
+  graphQuery(request: GraphQueryRequest): Observable<GraphQueryResponse> {
+    return this.http.post<GraphQueryResponse>(`${this.apiUrl()}/api/v1/graph-query`, request).pipe(
+      catchError(this.handleError)
+    );
+  }
+
+  getPaperGraph(paperId: string): Observable<PaperGraphResponse> {
+    return this.http.get<PaperGraphResponse>(`${this.apiUrl()}/api/v1/papers/${paperId}/graph`).pipe(
       catchError(this.handleError)
     );
   }

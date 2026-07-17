@@ -5,6 +5,8 @@ import { UploadComponent } from './components/upload/upload.component';
 import { StatusComponent } from './components/status/status.component';
 import { ChatComponent } from './components/chat/chat.component';
 import { RecentTasksComponent } from './components/recent-tasks/recent-tasks.component';
+import { GraphQueryComponent } from './components/graph-query/graph-query.component';
+import { PaperGraphComponent } from './components/paper-graph/paper-graph.component';
 
 @Component({
   selector: 'app-root',
@@ -15,7 +17,9 @@ import { RecentTasksComponent } from './components/recent-tasks/recent-tasks.com
     UploadComponent,
     StatusComponent,
     ChatComponent,
-    RecentTasksComponent
+    RecentTasksComponent,
+    GraphQueryComponent,
+    PaperGraphComponent
   ],
   template: `
     <app-header />
@@ -26,6 +30,7 @@ import { RecentTasksComponent } from './components/recent-tasks/recent-tasks.com
           <div class="grid-col">
             <app-upload (taskUploaded)="onTaskUploaded($event)" />
             <app-status #statusComponent />
+            <app-paper-graph #paperGraphComponent />
           </div>
           <div class="grid-col">
             <app-chat #chatComponent />
@@ -33,6 +38,7 @@ import { RecentTasksComponent } from './components/recent-tasks/recent-tasks.com
               (checkStatus)="onCheckStatus($event)"
               (useInChat)="onUseInChat($event)"
             />
+            <app-graph-query (viewPaperGraph)="onViewPaperGraph($event)" />
           </div>
         </div>
       </div>
@@ -99,6 +105,7 @@ import { RecentTasksComponent } from './components/recent-tasks/recent-tasks.com
 export class AppComponent {
   @ViewChild('statusComponent') statusComponent!: StatusComponent;
   @ViewChild('chatComponent') chatComponent!: ChatComponent;
+  @ViewChild('paperGraphComponent') paperGraphComponent!: PaperGraphComponent;
 
   onTaskUploaded(event: { taskId: string; docId?: string }): void {
     this.statusComponent.setTaskId(event.taskId);
@@ -113,5 +120,9 @@ export class AppComponent {
 
   onUseInChat(docId: string): void {
     this.chatComponent.setDocId(docId);
+  }
+
+  onViewPaperGraph(paperId: string): void {
+    this.paperGraphComponent.setPaperId(paperId);
   }
 }
