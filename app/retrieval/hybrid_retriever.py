@@ -61,6 +61,7 @@ class HybridRetriever:
         query: str,
         paper_id: Optional[str] = None,
         top_k: int = 5,
+        force_mode: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Classify *query* and run the retrieval combination its type calls for.
@@ -72,6 +73,12 @@ class HybridRetriever:
             and citation expansion to a specific paper, when the caller
             already knows which one the question concerns
         top_k : number of vector results to request
+        force_mode : ``None`` (default -- use the classifier's routing
+            table) | ``"graph"`` | ``"vector"`` | ``"both"``. Bypasses the
+            routing table and always uses the given combination,
+            regardless of query type. Used by the Phase 18 evaluation
+            runner to compare retrieval modes independent of how a given
+            question happens to get classified.
 
         Returns
         -------
@@ -86,23 +93,30 @@ class HybridRetriever:
         """
         query_type = self._classifier.classify(query)
 
+        if force_mode == "graph":
+            use_graph, use_vector = True, False
+        elif force_mode == "vector":
+            use_graph, use_vector = False, True
+        elif force_mode == "both":
+            use_graph, use_vector = True, True
+        else:
+            use_graph = query_type in _WANTS_GRAPH
+            use_vector = query_type in _WANTS_VECTOR
+
         graph_facts: List[Dict[str, Any]] = []
         vector_results: List[Dict[str, Any]] = []
         citation_paths: List[Dict[str, Any]] = []
 
-        if query_type in _WANTS_GRAPH and self._graph is not None:
+        if use_graph and self._graph is not None:
             graph_facts.extend(self._entity_facts(query))
             if paper_id:
                 graph_facts.extend(self._paper_facts(paper_id))
 
-        if query_type == QueryType.EVOLUTION and self._citations is not None and paper_id:
+        if use_graph and query_type == QueryType.EVOLUTION and self._citations is not None and paper_id:
             citation_paths = self._citations.expand(paper_id)
             graph_facts.extend(self._citation_path_facts(paper_id, citation_paths))
 
-        if query_type in _WANTS_VECTOR and self._vector is not None:
-            # citation_paths is only ever populated for EVOLUTION, which
-            # never reaches here (EVOLUTION isn't in _WANTS_VECTOR) --
-            # vector search is filtered by paper_id alone when given.
+        if use_vector and self._vector is not None:
             vector_results = self._vector.retrieve(
                 query, top_k=top_k, paper_id=paper_id,
             )

@@ -137,6 +137,40 @@ class TestSourcePaperIdAggregation:
         assert result["source_paper_ids"] == ["paper-a", "paper-b"]
 
 
+class TestForceMode:
+    def test_force_graph_skips_vector_even_for_explanation(self):
+        retriever, graph, vector, citations = _make_retriever()
+
+        retriever.retrieve("Explain how the Transformer works.", force_mode="graph")
+
+        assert graph.get_entity_relations.called
+        vector.retrieve.assert_not_called()
+
+    def test_force_vector_skips_graph_even_for_citation(self):
+        retriever, graph, vector, citations = _make_retriever()
+
+        retriever.retrieve("Who cites this paper?", paper_id="p1", force_mode="vector")
+
+        graph.get_entity_relations.assert_not_called()
+        graph.find_citing_papers.assert_not_called()
+        vector.retrieve.assert_called_once()
+
+    def test_force_both_runs_graph_and_vector_for_any_type(self):
+        retriever, graph, vector, citations = _make_retriever()
+
+        retriever.retrieve("Who cites this paper?", paper_id="p1", force_mode="both")
+
+        assert graph.find_citing_papers.called
+        vector.retrieve.assert_called_once()
+
+    def test_query_type_is_still_reported_under_force_mode(self):
+        retriever, graph, vector, citations = _make_retriever()
+
+        result = retriever.retrieve("Who cites this paper?", force_mode="vector")
+
+        assert result["query_type"] == QueryType.CITATION.value
+
+
 class TestEntityExtraction:
     def test_extracts_known_method_from_query_text(self):
         retriever, graph, vector, citations = _make_retriever()
