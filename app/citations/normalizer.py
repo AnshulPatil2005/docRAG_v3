@@ -6,7 +6,7 @@ suitable for graph construction.
 """
 
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import structlog
 
 logger = structlog.get_logger()
@@ -24,7 +24,9 @@ class CitationNormalizer:
         Normalize a list of raw reference dicts.
 
         Each input may have 'raw_text' and optional extracted fields.
-        Returns a list with consistent, cleaned fields.
+        Returns a list with consistent, cleaned fields. References that refer
+        to the same work (matching DOI or arXiv ID) are merged into a single
+        record, with all their source ref_ids collected into ``ref_ids``.
         """
         normalized = []
 
@@ -40,18 +42,50 @@ class CitationNormalizer:
             # Ensure ref_id exists
             if not norm.get("ref_id"):
                 norm["ref_id"] = ref.get("ref_id", f"ref_{len(normalized)}")
+            norm["ref_ids"] = [norm["ref_id"]] if norm.get("ref_id") else []
 
             normalized.append(norm)
 
-        logger.info("citations_normalized", count=len(normalized))
-        return normalized
+        merged = self._merge_duplicates(normalized)
+        logger.info("citations_normalized", count=len(merged))
+        return merged
+
+    def _merge_duplicates(
+        self, normalized: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """
+        Merge records that refer to the same work (shared DOI or arXiv ID).
+
+        The first-seen record's scalar fields (title, authors, year) are kept
+        as canonical; every later duplicate's ref_id is folded into the
+        survivor's ``ref_ids`` list instead of producing a separate record.
+        """
+        seen: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        result: List[Dict[str, Any]] = []
+
+        for norm in normalized:
+            key: Optional[Tuple[str, str]] = None
+            if norm.get("doi"):
+                key = ("doi", norm["doi"])
+            elif norm.get("arxiv_id"):
+                key = ("arxiv", norm["arxiv_id"])
+
+            if key and key in seen:
+                seen[key]["ref_ids"].extend(norm["ref_ids"])
+                continue
+
+            result.append(norm)
+            if key:
+                seen[key] = norm
+
+        return result
 
     def _normalize_structured(self, ref: Dict[str, Any]) -> Dict[str, Any]:
         """Clean up an already-partially-structured reference."""
         norm: Dict[str, Any] = {}
 
         norm["title"] = self._clean_string(ref.get("title"))
-        norm["authors"] = ref.get("authors", [])
+        norm["authors"] = [self._clean_string(a) for a in ref.get("authors", []) if self._clean_string(a)]
         norm["year"] = ref.get("year")
         norm["doi"] = self._clean_doi(ref.get("doi"))
         norm["arxiv_id"] = self._clean_arxiv(ref.get("arxiv_id"))
@@ -149,7 +183,9 @@ class CitationNormalizer:
         value = re.sub(r"\s+", "", str(value))
         if not value.lower().startswith("10."):
             return None
-        return value
+        # DOIs are case-insensitive; normalize to lowercase so equivalent
+        # DOIs from different sources dedupe correctly.
+        return value.lower()
 
     @staticmethod
     def _clean_arxiv(value: Optional[str]) -> Optional[str]:

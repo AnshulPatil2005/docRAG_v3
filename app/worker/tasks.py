@@ -4,6 +4,9 @@ import os
 
 from app.core.config import settings
 from app.storage.neo4j_client import Neo4jClient
+from app.storage.qdrant_client import QdrantClientWrapper
+from app.storage.vector_repository import VectorRepository
+from app.embeddings.embedder import EmbeddingService
 from app.pipeline.paper_ingestion_pipeline import PaperIngestionPipeline
 
 logger = get_task_logger(__name__)
@@ -32,6 +35,32 @@ def _create_neo4j_client() -> "Neo4jClient | None":
         return None
 
 
+def _create_vector_repo() -> "VectorRepository | None":
+    """
+    Attempt to connect to Qdrant.  Returns None on failure so that the
+    pipeline can still run the graph path without vector storage.
+    """
+    try:
+        qdrant = QdrantClientWrapper(
+            url=settings.QDRANT_URL, api_key=settings.QDRANT_API_KEY
+        )
+        qdrant.connect()
+        embedder = EmbeddingService(
+            provider=settings.EMBEDDING_PROVIDER,
+            model_name=settings.EMBEDDING_MODEL,
+            batch_size=settings.EMBEDDING_BATCH_SIZE,
+        )
+        logger.info("Qdrant connected")
+        return VectorRepository(
+            qdrant, embedder, collection_name=settings.QDRANT_COLLECTION_NAME
+        )
+    except Exception as exc:
+        logger.warning(
+            "Qdrant not available -- vector storage will be skipped: %s", exc
+        )
+        return None
+
+
 @celery_app.task(bind=True, name="app.worker.tasks.process_pdf_task", max_retries=3)
 def process_pdf_task(self, doc_id: str, file_path: str):
     """
@@ -47,11 +76,14 @@ def process_pdf_task(self, doc_id: str, file_path: str):
         logger.info("Starting processing for doc_id: %s", doc_id)
         self.update_state(state="PROCESSING", meta={"step": "INITIALIZING", "doc_id": doc_id})
 
-        # --- Neo4j connection (optional) ---
+        # --- Neo4j / Qdrant connections (both optional) ---
         neo4j_client = _create_neo4j_client()
+        vector_repo = _create_vector_repo()
 
         try:
-            pipeline = PaperIngestionPipeline(neo4j_client=neo4j_client)
+            pipeline = PaperIngestionPipeline(
+                neo4j_client=neo4j_client, vector_repo=vector_repo
+            )
             result = pipeline.process(paper_id=doc_id, file_path=file_path)
         finally:
             # Always clean up the Neo4j connection

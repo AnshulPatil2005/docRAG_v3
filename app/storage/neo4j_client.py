@@ -85,11 +85,8 @@ class Neo4jClient:
     def session(self):
         """Yield a managed Neo4j session."""
         self._ensure_connected()
-        sess = self._driver.session(database=self._database)
-        try:
+        with self._driver.session(database=self._database) as sess:
             yield sess
-        finally:
-            sess.close()
 
     def _ensure_connected(self) -> None:
         if self._driver is None:

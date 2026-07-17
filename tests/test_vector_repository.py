@@ -98,7 +98,9 @@ class TestStorePaperChunks:
         chunks = [{"text": "test"}]
         repo.store_paper_chunks("paper-1", chunks)
 
-        mock_qdrant.ensure_collection.assert_called_with("test-col", 768)
+        mock_qdrant.ensure_collection.assert_called_with(
+            collection_name="test-col", vector_dim=768
+        )
 
 
 # ======================================================================

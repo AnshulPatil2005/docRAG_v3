@@ -63,6 +63,10 @@ class VectorRepository:
     # Write operations
     # ------------------------------------------------------------------
 
+    @property
+    def embedder(self) -> EmbeddingService:
+        return self._embedder
+
     def store_paper_chunks(
         self,
         paper_id: str,
@@ -79,6 +83,10 @@ class VectorRepository:
             - ``section`` (str, optional): section name (e.g. "Abstract")
             - ``page`` (int, optional): page number
             - ``chunk_index`` (int, optional): chunk order within paper
+            - ``node_type`` / ``node_name`` (str, optional): links this chunk
+              back to the paper-graph node it was derived from
+            - ``source_text`` (str, optional): the original evidence text,
+              when ``text`` has been reformatted for embedding
 
         Returns
         -------
@@ -86,6 +94,27 @@ class VectorRepository:
 
         The collection is created (or validated) automatically based on
         the current embedder dimension.
+        """
+        if not chunks:
+            logger.info("no_chunks_to_store", paper_id=paper_id)
+            return {"chunks_stored": 0, "chunks_deleted": 0}
+
+        texts = [c["text"] for c in chunks]
+        logger.info("embedding_chunks", paper_id=paper_id, count=len(texts))
+        vectors = self._embedder.embed(texts)
+
+        return self.store_embedded_chunks(paper_id, chunks, vectors)
+
+    def store_embedded_chunks(
+        self,
+        paper_id: str,
+        chunks: List[Dict[str, Any]],
+        vectors: List[List[float]],
+    ) -> Dict[str, int]:
+        """
+        Store chunks whose vectors have already been computed (skips
+        re-embedding). Useful when a caller wants to track the embedding
+        step separately from the storage step.
         """
         if not chunks:
             logger.info("no_chunks_to_store", paper_id=paper_id)
@@ -109,27 +138,22 @@ class VectorRepository:
             )
             deleted_estimate = 0
 
-        # Extract texts and build point IDs
-        texts = [c["text"] for c in chunks]
         point_ids = [
             f"{paper_id}__chunk_{i:05d}" for i in range(len(chunks))
         ]
 
-        # Generate embeddings
-        logger.info("embedding_chunks", paper_id=paper_id, count=len(texts))
-        vectors = self._embedder.embed(texts)
-
         # Build Qdrant PointStructs
         points: List[qmodels.PointStruct] = []
-        for i, (pid, vec, chunk) in enumerate(
-            zip(point_ids, vectors, chunks)
-        ):
+        for pid, vec, chunk in zip(point_ids, vectors, chunks):
             payload: Dict[str, Any] = {
                 "paper_id": paper_id,
                 "text": chunk["text"],
             }
             # Attach optional metadata fields
-            for meta_key in ("section", "page", "chunk_index"):
+            for meta_key in (
+                "section", "page", "chunk_index",
+                "node_type", "node_name", "source_text",
+            ):
                 if meta_key in chunk:
                     payload[meta_key] = chunk[meta_key]
 

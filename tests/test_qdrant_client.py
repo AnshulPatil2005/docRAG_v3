@@ -39,6 +39,17 @@ def _make_mock_hit(id="point-1", score=0.95, payload=None):
     return hit
 
 
+def _not_found(status_code=404, reason_phrase="Not Found"):
+    """Build an UnexpectedResponse across qdrant-client versions (content/headers
+    became required positional args in newer releases)."""
+    return UnexpectedResponse(
+        status_code=status_code,
+        reason_phrase=reason_phrase,
+        content=b"",
+        headers={},
+    )
+
+
 # ======================================================================
 # Collection management
 # ======================================================================
@@ -47,9 +58,7 @@ class TestCollectionLifecycle:
     @patch("app.storage.qdrant_client.QdrantDriver")
     def test_creates_collection_when_not_found(self, MockDriver):
         mock_client = MockDriver.return_value
-        mock_client.get_collection.side_effect = UnexpectedResponse(
-            status_code=404, reason_phrase="Not Found"
-        )
+        mock_client.get_collection.side_effect = _not_found()
 
         from app.storage.qdrant_client import QdrantClientWrapper
         client = QdrantClientWrapper(url="http://localhost:6333")
@@ -89,9 +98,7 @@ class TestCollectionLifecycle:
     @patch("app.storage.qdrant_client.QdrantDriver")
     def test_delete_collection_noop_on_404(self, MockDriver):
         mock_client = MockDriver.return_value
-        mock_client.delete_collection.side_effect = UnexpectedResponse(
-            status_code=404, reason_phrase="Not Found"
-        )
+        mock_client.delete_collection.side_effect = _not_found()
 
         from app.storage.qdrant_client import QdrantClientWrapper
         client = QdrantClientWrapper(url="http://localhost:6333")
@@ -115,9 +122,7 @@ class TestCollectionLifecycle:
     @patch("app.storage.qdrant_client.QdrantDriver")
     def test_collection_info_returns_none_on_404(self, MockDriver):
         mock_client = MockDriver.return_value
-        mock_client.get_collection.side_effect = UnexpectedResponse(
-            status_code=404, reason_phrase="Not Found"
-        )
+        mock_client.get_collection.side_effect = _not_found()
 
         from app.storage.qdrant_client import QdrantClientWrapper
         client = QdrantClientWrapper(url="http://localhost:6333")
@@ -328,7 +333,7 @@ class TestDimensionMismatchErrors:
         client = QdrantClientWrapper(url="http://localhost:6333")
         client.connect()
 
-        with pytest.raises(RuntimeError, match="Failed to create collection"):
+        with pytest.raises(RuntimeError, match="was deleted .* but recreation"):
             client.ensure_collection("test-col", vector_dim=384)
 
         # Delete was called (collection is now gone), but create failed

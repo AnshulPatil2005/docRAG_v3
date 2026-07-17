@@ -14,9 +14,14 @@ PDF
   -> Relation Extraction  (non-critical)
   -> Build Paper Graph  (non-critical)
   -> Store Graph in Neo4j  (non-critical)
-  -> Text Chunking  (non-critical)
+  -> Build Vector Chunks  (non-critical)
   -> Generate Embeddings  (non-critical)
   -> Store Vectors in Qdrant  (non-critical)
+
+Vector chunks are built from the same paper-graph inputs as the Neo4j
+step (abstract, sections, entities) rather than raw OCR text, so every
+stored vector carries ``node_type`` / ``node_name`` metadata linking it
+back to its paper-graph node (Phase 9).
 
 Risk Mitigations Addressed
 --------------------------
@@ -27,6 +32,9 @@ Risk Mitigations Addressed
   outcome (SUCCESS / ERROR / SKIPPED), duration, and error message.
 - Neo4j unavailability is graceful: If Neo4j cannot be reached the
   pipeline still completes the vector path and marks graph steps as SKIPPED.
+- Qdrant unavailability is graceful: mirrors the Neo4j behaviour -- if no
+  ``VectorRepository`` is supplied, EMBEDDING/QDRANT_STORE are SKIPPED
+  rather than raising.
 """
 
 import time
@@ -44,6 +52,7 @@ from app.graph.relation_extractor import RelationExtractor
 from app.graph.paper_graph_builder import PaperGraphBuilder
 from app.storage.neo4j_client import Neo4jClient
 from app.storage.graph_repository import GraphRepository
+from app.storage.vector_repository import VectorRepository
 from app.core.config import settings
 
 logger = structlog.get_logger()
@@ -124,9 +133,11 @@ class PaperIngestionPipeline:
     def __init__(
         self,
         neo4j_client: Optional[Neo4jClient] = None,
+        vector_repo: Optional[VectorRepository] = None,
     ) -> None:
         self._neo4j_client = neo4j_client
         self._graph_repo: Optional[GraphRepository] = None
+        self._vector_repo = vector_repo
 
         # Existing extractors (already in the codebase)
         self._parser = PaperParser()
@@ -283,32 +294,44 @@ class PaperIngestionPipeline:
                 error="Graph build did not produce data",
             ))
 
-        # ---- 8. Text Chunking (non-critical) ---------------------------
-        from app.services.text_processing import chunk_text
+        # ---- 8. Build Vector Chunks (non-critical) ----------------------
+        def _do_chunking():
+            return self._build_vector_chunks(parsed, entities)
 
-        chunk_step = self._run_step("CHUNKING", chunk_text, pages_text, paper_id)
+        chunk_step = self._run_step("CHUNKING", _do_chunking)
         result.steps.append(chunk_step)
         chunks = chunk_step.data if chunk_step.status == StepStatus.SUCCESS else []
 
         # ---- 9. Generate Embeddings (non-critical) ----------------------
-        from app.services.embeddings import generate_embeddings
+        vectors: Optional[List[List[float]]] = None
+        if self._vector_repo is None:
+            result.steps.append(StepResult(
+                step_name="EMBEDDING", status=StepStatus.SKIPPED,
+                error="Vector store not configured",
+            ))
+        elif not chunks:
+            result.steps.append(StepResult(
+                step_name="EMBEDDING", status=StepStatus.SKIPPED,
+                error="No chunks to embed",
+            ))
+        else:
+            def _do_embed():
+                return self._vector_repo.embedder.embed([c["text"] for c in chunks])
 
-        embed_step = self._run_step("EMBEDDING", generate_embeddings, chunks)
-        result.steps.append(embed_step)
-        embeddings = embed_step.data if embed_step.status == StepStatus.SUCCESS else []
+            embed_step = self._run_step("EMBEDDING", _do_embed)
+            result.steps.append(embed_step)
+            vectors = embed_step.data if embed_step.status == StepStatus.SUCCESS else None
 
         # ---- 10. Store Vectors in Qdrant (non-critical) -----------------
-        if embeddings:
-            from app.services.vector_store import upsert_vectors
-
+        if vectors and self._vector_repo is not None:
             def _do_qdrant():
-                upsert_vectors(settings.QDRANT_COLLECTION_NAME, embeddings)
-                return len(embeddings)
+                return self._vector_repo.store_embedded_chunks(paper_id, chunks, vectors)
 
             qdrant_step = self._run_step("QDRANT_STORE", _do_qdrant)
             result.steps.append(qdrant_step)
             result.vector_count = (
-                qdrant_step.data if qdrant_step.status == StepStatus.SUCCESS else 0
+                qdrant_step.data.get("chunks_stored", 0)
+                if qdrant_step.status == StepStatus.SUCCESS else 0
             )
         else:
             result.steps.append(StepResult(
@@ -328,6 +351,56 @@ class PaperIngestionPipeline:
             vectors=result.vector_count,
         )
         return result
+
+    # ------------------------------------------------------------------
+    # Vector chunk construction
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _build_vector_chunks(parsed, entities: List[Dict[str, str]]) -> List[Dict[str, Any]]:
+        """
+        Build the list of text chunks to embed, each tagged with the
+        paper-graph node it corresponds to (Phase 9 metadata schema:
+        paper_id / section / node_type / node_name / source_text).
+        """
+        chunks: List[Dict[str, Any]] = []
+
+        if parsed.abstract:
+            chunks.append({
+                "text": parsed.abstract,
+                "section": "Abstract",
+                "node_type": "Paper",
+                "node_name": parsed.title or "",
+                "source_text": parsed.abstract,
+            })
+
+        for sec in parsed.sections:
+            text = (sec.get("text") or "").strip()
+            if not text:
+                continue
+            heading = sec.get("heading", "")
+            chunks.append({
+                "text": text,
+                "section": heading,
+                "node_type": "Section",
+                "node_name": heading,
+                "source_text": text,
+            })
+
+        for ent in entities:
+            name = ent.get("name")
+            if not name:
+                continue
+            evidence = ent.get("evidence") or ""
+            chunks.append({
+                "text": f"{name}: {evidence}" if evidence else name,
+                "section": ent.get("source_section", ""),
+                "node_type": ent.get("type", ""),
+                "node_name": name,
+                "source_text": evidence,
+            })
+
+        return chunks
 
     # ------------------------------------------------------------------
     # Citation stub resolution
