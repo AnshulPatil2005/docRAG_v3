@@ -25,10 +25,10 @@ class Settings(BaseSettings):
     NEO4J_DATABASE: str = "neo4j"
 
     # LLM
-    OPENROUTER_API_KEY: Optional[str] = None
+    OPENROUTER_API_KEY: Optional[str] = "sk-or-v1-your-key-here"
     OLLAMA_BASE_URL: str = "http://ollama:11434"
-    LLM_PROVIDER: str = "ollama" # ollama or openrouter
-    LLM_MODEL: str = "llama3" # e.g. "llama3" for ollama or "mistralai/mistral-7b-instruct" for openrouter
+    LLM_PROVIDER: str = "openrouter" # ollama or openrouter
+    LLM_MODEL: str = "meta-llama/llama-3-8b-instruct:free" # e.g. "llama3" for ollama or "mistralai/mistral-7b-instruct" for openrouter
 
     # Embeddings (Phase 9)
     EMBEDDING_PROVIDER: str = "local"   # "local" | "openai" | "stub"
