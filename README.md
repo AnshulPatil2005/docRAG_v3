@@ -9,7 +9,7 @@ A document question-answering system that extracts text from PDFs using OCR and 
 - **doctr** for OCR text extraction
 - **Qdrant** vector database for semantic search
 - **Sentence Transformers** for generating embeddings (local)
-- **Ollama** (local) or **OpenRouter** (cloud) for LLM inference
+- **OpenRouter** for LLM inference (server key optional -- users can supply their own in the UI)
 - **Angular 17** frontend with standalone components
 
 ### How It Works
@@ -64,39 +64,32 @@ Create a `.env` file to configure your models.
 
 #### LLM Configuration
 
-Choose one of the following LLM providers:
-
-**Option 1: Ollama (Local - Free)**
+All LLM inference goes through [OpenRouter](https://openrouter.ai) (no local Ollama option -- one less service to run).
 
 ```env
-LLM_PROVIDER=ollama
-LLM_MODEL=llama3
-```
-
-After starting Docker, pull the model:
-```bash
-docker-compose exec ollama ollama pull llama3
-```
-
-Available Ollama models: `llama3`, `llama3.2`, `mistral`, `codellama`, `phi3`, etc.
-
-**Option 2: OpenRouter (Cloud - Paid)**
-
-```env
-LLM_PROVIDER=openrouter
-LLM_MODEL=google/gemini-2.0-flash-001
+LLM_MODEL=meta-llama/llama-3-8b-instruct:free
 OPENROUTER_API_KEY=sk-or-v1-your-key-here
 ```
 
-Get your API key at https://openrouter.ai/keys
+Get your API key at https://openrouter.ai/keys.
 
 Popular OpenRouter models:
+- `meta-llama/llama-3-8b-instruct:free` - Free tier (default)
 - `google/gemini-2.0-flash-001` - Fast and cheap
 - `anthropic/claude-3.5-sonnet` - High quality
-- `meta-llama/llama-3-70b-instruct` - Open source
 - `openai/gpt-4o-mini` - Good balance
 
-See all models at https://openrouter.ai/models
+See all models at https://openrouter.ai/models.
+
+**`OPENROUTER_API_KEY` is optional on the server.** If it's left unset,
+`/chat` and `/graph-query` requests need their own key instead -- the
+frontend's header has an "OpenRouter Key" field for exactly this (stored
+in the browser's `localStorage`, sent with each request, never written to
+the server). This is meant for public/shared deployments where you don't
+want to pay for everyone's usage: leave `OPENROUTER_API_KEY` unset and let
+each visitor use their own key. `GET /api/v1/llm-status` reports whether a
+server key is configured, which is what the frontend uses to decide
+whether to show that field as required.
 
 #### Embedding Model Configuration
 
@@ -133,8 +126,7 @@ Available embedding models (from [Sentence Transformers](https://www.sbert.net/d
 
 ```env
 # LLM Configuration
-LLM_PROVIDER=openrouter          # or "ollama"
-LLM_MODEL=google/gemini-2.0-flash-001
+LLM_MODEL=meta-llama/llama-3-8b-instruct:free
 OPENROUTER_API_KEY=sk-or-v1-your-key-here
 
 # Embedding Configuration
@@ -159,7 +151,7 @@ docker-compose up -d --build
 This launches:
 - **Redis** - task queue (port 6379)
 - **Qdrant** - vector database (port 6333)
-- **Ollama** - local LLM inference (port 11434) - only used if `LLM_PROVIDER=ollama`
+- **Neo4j** - knowledge graph store (port 7474 browser UI, 7687 Bolt) -- see [`docs/architecture.md`](docs/architecture.md) for the GraphRAG layer this backs
 - **API** - FastAPI backend (port 8000)
 - **Worker** - Celery background processing
 
@@ -234,6 +226,7 @@ Open the frontend URL in your browser:
 
 **Features:**
 - API URL configuration with online/offline status indicator
+- Optional OpenRouter API key field (only required if the server has none configured)
 - Drag & drop PDF upload with optional force re-processing
 - Task status monitoring with auto-refresh
 - Chat/query interface with citation display
@@ -311,7 +304,7 @@ View logs:
 ```bash
 docker-compose logs -f api      # API logs
 docker-compose logs -f worker   # Worker logs
-docker-compose logs -f ollama   # LLM logs
+docker-compose logs -f neo4j    # Graph store logs
 ```
 
 ### Frontend
@@ -329,11 +322,16 @@ Key files:
 
 ## Troubleshooting
 
-### Model not found error
-```
-model 'llama3' not found
-```
-Pull the model: `docker-compose exec ollama ollama pull llama3`
+### "No OpenRouter API key configured" / 401 from /chat or /graph-query
+The server has no `OPENROUTER_API_KEY` set and the request didn't supply
+one either. Either set `OPENROUTER_API_KEY` in `.env` and restart
+(`docker-compose restart api`), or enter a key in the "OpenRouter Key"
+field in the frontend header (get one free at https://openrouter.ai/keys).
+
+### Model not found / invalid model error from OpenRouter
+Double-check `LLM_MODEL` is a valid OpenRouter model slug (e.g.
+`meta-llama/llama-3-8b-instruct:free`), not a bare model name -- see
+https://openrouter.ai/models for the full list.
 
 ### API shows "Offline" in frontend
 - Check containers are running: `docker-compose ps`

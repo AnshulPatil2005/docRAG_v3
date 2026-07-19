@@ -105,6 +105,36 @@ class TestGraphQueryEndpoint:
         assert response.status_code == 503
 
     @pytest.mark.asyncio
+    async def test_passes_request_api_key_to_answer_generator(self):
+        mock_hybrid = MagicMock()
+        mock_hybrid.retrieve.return_value = RETRIEVAL_RESULT
+        mock_generator = MagicMock()
+        mock_generator.generate.return_value = GENERATED_ANSWER
+        app.dependency_overrides[get_hybrid_retriever] = lambda: mock_hybrid
+        app.dependency_overrides[get_answer_generator] = lambda: mock_generator
+
+        await _post_graph_query({"query": "What is BERT?", "api_key": "sk-or-user-supplied"})
+
+        mock_generator.generate.assert_called_once_with(
+            "What is BERT?", RETRIEVAL_RESULT, api_key="sk-or-user-supplied"
+        )
+
+    @pytest.mark.asyncio
+    async def test_no_api_key_available_returns_401(self):
+        from app.services.llm import LLMNotConfiguredError
+
+        mock_hybrid = MagicMock()
+        mock_hybrid.retrieve.return_value = RETRIEVAL_RESULT
+        mock_generator = MagicMock()
+        mock_generator.generate.side_effect = LLMNotConfiguredError("no key")
+        app.dependency_overrides[get_hybrid_retriever] = lambda: mock_hybrid
+        app.dependency_overrides[get_answer_generator] = lambda: mock_generator
+
+        response = await _post_graph_query({"query": "What is BERT?"})
+
+        assert response.status_code == 401
+
+    @pytest.mark.asyncio
     async def test_default_top_k_used_when_omitted(self):
         mock_hybrid = MagicMock()
         mock_hybrid.retrieve.return_value = RETRIEVAL_RESULT

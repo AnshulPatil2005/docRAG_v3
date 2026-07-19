@@ -30,21 +30,6 @@ services:
       retries: 5
       start_period: 30s
 
-  ollama:
-    image: ollama/ollama:latest
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    # Enable if GPU is available
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
-
   api:
     build: .
     command: uvicorn app.api.main:app --host 0.0.0.0 --port 8000 --reload
@@ -94,7 +79,6 @@ volumes:
   redis_data:
   qdrant_data:
   neo4j_data:
-  ollama_data:
   uploads_data:
   torch_cache:
   huggingface_cache:

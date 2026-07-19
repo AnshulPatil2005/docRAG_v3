@@ -16,7 +16,8 @@ router = APIRouter()
 class ChatRequest(BaseModel):
     query: str
     doc_id: Optional[str] = None
-    
+    api_key: Optional[str] = None  # OpenRouter key, used if the server has none configured
+
 class ChatResponse(BaseModel):
     answer: str
     citations: list
@@ -25,39 +26,42 @@ class ChatResponse(BaseModel):
 @limiter.limit("20/minute")
 async def chat(request: Request, body: ChatRequest):
     from app.services.embeddings import get_model
-    from app.services.llm import llm_client
+    from app.services.llm import llm_client, LLMNotConfiguredError
     from app.services.vector_store import search_vectors
 
     # 1. Embed query
     model = get_model()
     query_vector = model.encode(body.query).tolist()
-    
+
     # 2. Search Qdrant
     search_results = search_vectors(query_vector, top_k=settings.RAG_TOP_K, doc_id=body.doc_id)
-    
+
     # 3. Construct Context
     context_text = ""
     citations = []
-    
+
     for hit in search_results:
         payload = hit.payload
         text = payload.get("text", "")
         # Add to context
         context_text += f"---\n{text}\n"
-        
+
         citations.append({
             "doc_id": payload.get("doc_id"),
             "page": payload.get("page"),
             "filename": payload.get("filename"),
             "text_snippet": text[:100] + "..."
         })
-    
+
     # 4. Generate Answer
     system_prompt = "You are a helpful assistant. Use the following context to answer the user's question. If the answer is not in the context, say you don't know."
     prompt = f"Context:\n{context_text}\n\nQuestion: {body.query}"
-    
-    answer = llm_client.generate_response(prompt, system_prompt=system_prompt)
-    
+
+    try:
+        answer = llm_client.generate_response(prompt, system_prompt=system_prompt, api_key=body.api_key)
+    except LLMNotConfiguredError as exc:
+        raise HTTPException(status_code=401, detail=str(exc))
+
     return {
         "answer": answer,
         "citations": citations
@@ -144,3 +148,8 @@ async def get_status(task_id: str):
 @router.get("/health")
 async def health_check():
     return {"status": "ok"}
+
+@router.get("/llm-status")
+async def llm_status():
+    from app.services.llm import llm_client
+    return {"server_key_configured": llm_client.has_server_key}

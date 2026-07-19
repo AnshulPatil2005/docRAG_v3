@@ -29,6 +29,7 @@ from app.retrieval.vector_retriever import VectorRetriever
 from app.retrieval.citation_expander import CitationExpander
 from app.retrieval.hybrid_retriever import HybridRetriever
 from app.llm.answer_generator import AnswerGenerator
+from app.services.llm import LLMNotConfiguredError
 
 logger = structlog.get_logger()
 
@@ -43,6 +44,7 @@ class GraphQueryRequest(BaseModel):
     query: str
     project_id: Optional[str] = None
     top_k: int = Field(default=10, ge=1, le=50)
+    api_key: Optional[str] = None  # OpenRouter key, used if the server has none configured
 
     @field_validator("query")
     @classmethod
@@ -141,7 +143,10 @@ async def graph_query(
             status_code=503, detail="Graph/vector store is currently unavailable"
         ) from exc
 
-    generated = answer_generator.generate(body.query, retrieval_result)
+    try:
+        generated = answer_generator.generate(body.query, retrieval_result, api_key=body.api_key)
+    except LLMNotConfiguredError as exc:
+        raise HTTPException(status_code=401, detail=str(exc))
 
     return {
         "answer": generated["answer"],

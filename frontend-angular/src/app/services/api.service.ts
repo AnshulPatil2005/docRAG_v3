@@ -10,11 +10,13 @@ import {
   HealthStatus,
   GraphQueryRequest,
   GraphQueryResponse,
-  PaperGraphResponse
+  PaperGraphResponse,
+  LlmStatus
 } from '../models/api.models';
 
 const STORAGE_KEY = 'rag_recent_tasks';
 const API_URL_KEY = 'apiUrl';
+const LLM_API_KEY_STORAGE = 'openrouter_api_key';
 const DEFAULT_API_URL = 'https://docrag-2gvg.onrender.com';
 const KEEP_ALIVE_INTERVAL = 14 * 60 * 1000; // 14 minutes
 
@@ -27,10 +29,15 @@ export class ApiService {
   apiUrl = signal<string>(this.loadApiUrl());
   healthStatus = signal<HealthStatus>({ online: false });
   recentTasks = signal<RecentTask[]>(this.loadRecentTasks());
+  llmApiKey = signal<string>(this.loadLlmApiKey());
+  // Optimistic default so the "no server key" hint doesn't flash on load;
+  // flips to false shortly after if the server really has none configured.
+  llmStatus = signal<LlmStatus>({ server_key_configured: true });
 
   constructor(private http: HttpClient) {
     this.startKeepAlive();
     this.checkHealth();
+    this.checkLlmStatus();
     setInterval(() => this.checkHealth(), 30000);
   }
 
@@ -48,6 +55,33 @@ export class ApiService {
       localStorage.setItem(API_URL_KEY, cleanUrl);
     }
     this.checkHealth();
+    this.checkLlmStatus();
+  }
+
+  private loadLlmApiKey(): string {
+    if (typeof localStorage !== 'undefined') {
+      return localStorage.getItem(LLM_API_KEY_STORAGE) || '';
+    }
+    return '';
+  }
+
+  setLlmApiKey(key: string): void {
+    const trimmed = key.trim();
+    this.llmApiKey.set(trimmed);
+    if (typeof localStorage !== 'undefined') {
+      if (trimmed) {
+        localStorage.setItem(LLM_API_KEY_STORAGE, trimmed);
+      } else {
+        localStorage.removeItem(LLM_API_KEY_STORAGE);
+      }
+    }
+  }
+
+  checkLlmStatus(): void {
+    this.http.get<LlmStatus>(`${this.apiUrl()}/api/v1/llm-status`).subscribe({
+      next: (status) => this.llmStatus.set(status),
+      error: () => this.llmStatus.set({ server_key_configured: true }) // fail open -- don't nag if we can't tell
+    });
   }
 
   private startKeepAlive(): void {
@@ -101,13 +135,15 @@ export class ApiService {
   }
 
   chat(request: ChatRequest): Observable<ChatResponse> {
-    return this.http.post<ChatResponse>(`${this.apiUrl()}/api/v1/chat`, request).pipe(
+    const payload = { ...request, api_key: request.api_key || this.llmApiKey() || undefined };
+    return this.http.post<ChatResponse>(`${this.apiUrl()}/api/v1/chat`, payload).pipe(
       catchError(this.handleError)
     );
   }
 
   graphQuery(request: GraphQueryRequest): Observable<GraphQueryResponse> {
-    return this.http.post<GraphQueryResponse>(`${this.apiUrl()}/api/v1/graph-query`, request).pipe(
+    const payload = { ...request, api_key: request.api_key || this.llmApiKey() || undefined };
+    return this.http.post<GraphQueryResponse>(`${this.apiUrl()}/api/v1/graph-query`, payload).pipe(
       catchError(this.handleError)
     );
   }

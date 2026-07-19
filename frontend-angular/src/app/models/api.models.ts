@@ -22,6 +22,7 @@ export interface Citation {
 export interface ChatRequest {
   query: string;
   doc_id?: string;
+  api_key?: string;
 }
 
 export interface ChatResponse {
@@ -42,6 +43,10 @@ export interface HealthStatus {
   message?: string;
 }
 
+export interface LlmStatus {
+  server_key_configured: boolean;
+}
+
 // ---------------------------------------------------------------------
 // GraphRAG (Phase 16/17)
 // ---------------------------------------------------------------------
@@ -50,6 +55,7 @@ export interface GraphQueryRequest {
   query: string;
   project_id?: string;
   top_k?: number;
+  api_key?: string;
 }
 
 export interface GraphNodeRef {

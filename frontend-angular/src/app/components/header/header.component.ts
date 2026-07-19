@@ -24,12 +24,30 @@ import { ApiService } from '../../services/api.service';
             placeholder="https://docrag-2gvg.onrender.com"
           />
         </div>
+        <div class="api-url-input llm-key-input" [class.required]="!apiService.llmStatus().server_key_configured">
+          <label for="llmApiKey">
+            OpenRouter Key{{ apiService.llmStatus().server_key_configured ? ' (optional):' : ' (required):' }}
+          </label>
+          <input
+            type="password"
+            id="llmApiKey"
+            [ngModel]="apiService.llmApiKey()"
+            (ngModelChange)="onLlmApiKeyChange($event)"
+            placeholder="sk-or-v1-..."
+          />
+        </div>
         <div class="status-indicator" [class.online]="apiService.healthStatus().online">
           <span class="dot"></span>
           <span class="text">{{ apiService.healthStatus().online ? 'Online' : 'Offline' }}</span>
         </div>
       </div>
     </header>
+    @if (!apiService.llmStatus().server_key_configured && !apiService.llmApiKey()) {
+      <div class="llm-key-banner">
+        No server-side OpenRouter API key is configured. Enter your own key above to ask questions
+        (get one free at <a href="https://openrouter.ai/keys" target="_blank" rel="noopener">openrouter.ai/keys</a>).
+      </div>
+    }
   `,
   styles: [`
     .header {
@@ -89,6 +107,27 @@ import { ApiService } from '../../services/api.service';
       border-color: #333;
     }
 
+    .llm-key-input.required label {
+      color: #b02a37;
+    }
+
+    .llm-key-input.required input {
+      border-color: #dc3545;
+    }
+
+    .llm-key-banner {
+      width: 100%;
+      padding: 0.5rem 2rem 1rem;
+      font-size: 0.8125rem;
+      color: #b02a37;
+      background: #fff;
+    }
+
+    .llm-key-banner a {
+      color: inherit;
+      text-decoration: underline;
+    }
+
     .status-indicator {
       display: flex;
       align-items: center;
@@ -131,5 +170,9 @@ export class HeaderComponent {
 
   onApiUrlChange(url: string): void {
     this.apiService.setApiUrl(url);
+  }
+
+  onLlmApiKeyChange(key: string): void {
+    this.apiService.setLlmApiKey(key);
   }
 }

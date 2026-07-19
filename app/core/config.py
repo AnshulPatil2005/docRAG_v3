@@ -24,11 +24,12 @@ class Settings(BaseSettings):
     NEO4J_PASSWORD: str = "password"
     NEO4J_DATABASE: str = "neo4j"
 
-    # LLM
+    # LLM (OpenRouter only -- see docs/decisions.md)
+    # Server-side key is optional: if unset, requests must supply their own
+    # OpenRouter key (e.g. entered in the frontend header) or the LLM calls
+    # fail with a clear "no API key" error rather than a silent one.
     OPENROUTER_API_KEY: Optional[str] = None
-    OLLAMA_BASE_URL: str = "http://ollama:11434"
-    LLM_PROVIDER: str = "ollama" # ollama or openrouter
-    LLM_MODEL: str = "llama3" # e.g. "llama3" for ollama or "mistralai/mistral-7b-instruct" for openrouter
+    LLM_MODEL: str = "meta-llama/llama-3-8b-instruct:free"
 
     # Embeddings (Phase 9)
     EMBEDDING_PROVIDER: str = "local"   # "local" | "openai" | "stub"
