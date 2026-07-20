@@ -33,6 +33,23 @@ async def lifespan(app: FastAPI):
     import os
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 
+    # Pre-warm the embedding model. It's lazily loaded on first use by
+    # design (keeps a plain worker/api boot fast when nothing needs it
+    # yet), but that means the *first* /chat request after a fresh start
+    # pays the multi-second model-load cost synchronously, inline in the
+    # request -- long enough in practice to trip a client-side timeout,
+    # which then looks like a network failure even though the server goes
+    # on to complete the request fine (visible in the logs as a 200).
+    # Loading it here instead, before the server starts accepting traffic,
+    # means no real request ever pays that cost.
+    import asyncio
+    from app.services.embeddings import get_model
+    try:
+        await asyncio.to_thread(get_model)
+        logger.info("Embedding model pre-warmed")
+    except Exception as exc:
+        logger.warning(f"Embedding model pre-warm failed (falls back to lazy load): {exc}")
+
     yield
 
     # SHUTDOWN LOGIC
