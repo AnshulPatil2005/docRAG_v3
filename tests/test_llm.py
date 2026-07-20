@@ -32,7 +32,7 @@ class TestGenerateResponse:
         with patch("app.services.llm.settings") as mock_settings, \
              patch("app.services.llm.OpenAI") as MockOpenAI:
             mock_settings.OPENROUTER_API_KEY = "sk-or-server-key"
-            mock_settings.LLM_MODEL = "meta-llama/llama-3-8b-instruct:free"
+            mock_settings.LLM_MODEL = "openai/gpt-oss-20b:free"
             MockOpenAI.return_value.chat.completions.create.return_value = _mock_openai_response()
 
             client = LLMClient()
@@ -45,7 +45,7 @@ class TestGenerateResponse:
         with patch("app.services.llm.settings") as mock_settings, \
              patch("app.services.llm.OpenAI") as MockOpenAI:
             mock_settings.OPENROUTER_API_KEY = "sk-or-server-key"
-            mock_settings.LLM_MODEL = "meta-llama/llama-3-8b-instruct:free"
+            mock_settings.LLM_MODEL = "openai/gpt-oss-20b:free"
             MockOpenAI.return_value.chat.completions.create.return_value = _mock_openai_response()
 
             client = LLMClient()
@@ -57,7 +57,7 @@ class TestGenerateResponse:
         with patch("app.services.llm.settings") as mock_settings, \
              patch("app.services.llm.OpenAI") as MockOpenAI:
             mock_settings.OPENROUTER_API_KEY = None
-            mock_settings.LLM_MODEL = "meta-llama/llama-3-8b-instruct:free"
+            mock_settings.LLM_MODEL = "openai/gpt-oss-20b:free"
             MockOpenAI.return_value.chat.completions.create.return_value = _mock_openai_response()
 
             client = LLMClient()
@@ -85,7 +85,7 @@ class TestGenerateResponse:
         with patch("app.services.llm.settings") as mock_settings, \
              patch("app.services.llm.OpenAI") as MockOpenAI:
             mock_settings.OPENROUTER_API_KEY = "sk-or-server-key"
-            mock_settings.LLM_MODEL = "meta-llama/llama-3-8b-instruct:free"
+            mock_settings.LLM_MODEL = "openai/gpt-oss-20b:free"
             MockOpenAI.return_value.chat.completions.create.side_effect = Exception("upstream down")
 
             client = LLMClient()
@@ -97,7 +97,7 @@ class TestGenerateResponse:
         with patch("app.services.llm.settings") as mock_settings, \
              patch("app.services.llm.OpenAI") as MockOpenAI:
             mock_settings.OPENROUTER_API_KEY = "sk-or-server-key"
-            mock_settings.LLM_MODEL = "meta-llama/llama-3-8b-instruct:free"
+            mock_settings.LLM_MODEL = "openai/gpt-oss-20b:free"
             MockOpenAI.return_value.chat.completions.create.return_value = _mock_openai_response()
 
             client = LLMClient()
@@ -111,12 +111,12 @@ class TestGenerateResponse:
 class TestModelSelection:
     def test_defaults_to_settings_model(self):
         with patch("app.services.llm.settings") as mock_settings:
-            mock_settings.LLM_MODEL = "meta-llama/llama-3-8b-instruct:free"
+            mock_settings.LLM_MODEL = "openai/gpt-oss-20b:free"
             client = LLMClient()
-            assert client.model == "meta-llama/llama-3-8b-instruct:free"
+            assert client.model == "openai/gpt-oss-20b:free"
 
     def test_explicit_model_overrides_settings(self):
         with patch("app.services.llm.settings") as mock_settings:
-            mock_settings.LLM_MODEL = "meta-llama/llama-3-8b-instruct:free"
+            mock_settings.LLM_MODEL = "openai/gpt-oss-20b:free"
             client = LLMClient(model="anthropic/claude-3.5-sonnet")
             assert client.model == "anthropic/claude-3.5-sonnet"

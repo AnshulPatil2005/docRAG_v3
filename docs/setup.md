@@ -27,7 +27,7 @@ cp .env.example .env
 | `NEO4J_URI` | `bolt://neo4j:7687` | Graph store |
 | `NEO4J_USER` / `NEO4J_PASSWORD` | `neo4j` / `password` | Must match `docker-compose.yml`'s `NEO4J_AUTH` |
 | `OPENROUTER_API_KEY` | _(empty)_ | Optional -- if unset, every `/chat`/`/graph-query` request must supply its own key (e.g. the frontend header's "OpenRouter Key" field) or it 401s |
-| `LLM_MODEL` | `meta-llama/llama-3-8b-instruct:free` | Must be a valid OpenRouter model slug -- see https://openrouter.ai/models |
+| `LLM_MODEL` | `openai/gpt-oss-20b:free` | Must be a valid, currently-listed OpenRouter model slug -- these get renamed/retired over time, see https://openrouter.ai/models |
 | `EMBEDDING_PROVIDER` | `local` | `local` (sentence-transformers) \| `openai` \| `stub` (deterministic, no model download -- tests/dev only) |
 | `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Only used when `EMBEDDING_PROVIDER=local` |
 | `OPENAI_API_KEY` | _(empty)_ | Required only if `EMBEDDING_PROVIDER=openai` |

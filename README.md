@@ -67,19 +67,21 @@ Create a `.env` file to configure your models.
 All LLM inference goes through [OpenRouter](https://openrouter.ai) (no local Ollama option -- one less service to run).
 
 ```env
-LLM_MODEL=meta-llama/llama-3-8b-instruct:free
+LLM_MODEL=openai/gpt-oss-20b:free
 OPENROUTER_API_KEY=sk-or-v1-your-key-here
 ```
 
 Get your API key at https://openrouter.ai/keys.
 
-Popular OpenRouter models:
-- `meta-llama/llama-3-8b-instruct:free` - Free tier (default)
-- `google/gemini-2.0-flash-001` - Fast and cheap
-- `anthropic/claude-3.5-sonnet` - High quality
-- `openai/gpt-4o-mini` - Good balance
-
-See all models at https://openrouter.ai/models.
+**Model IDs on OpenRouter change over time** (models get added, renamed, and
+retired) -- if you get a `404 No endpoints found for <model>` error, the
+`LLM_MODEL` value is no longer valid. Check the live, current list at
+https://openrouter.ai/models (filter by "Free" in the sidebar for no-cost
+options) rather than relying on any list here going stale. As of this
+writing, current free-tier options include `openai/gpt-oss-20b:free`,
+`google/gemma-4-26b-a4b-it:free`, and several `nvidia/nemotron-*:free`
+variants; paid options like `anthropic/claude-3.5-sonnet` or
+`openai/gpt-4o-mini` are more capable if quality matters more than cost.
 
 **`OPENROUTER_API_KEY` is optional on the server.** If it's left unset,
 `/chat` and `/graph-query` requests need their own key instead -- the

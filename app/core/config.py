@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     # OpenRouter key (e.g. entered in the frontend header) or the LLM calls
     # fail with a clear "no API key" error rather than a silent one.
     OPENROUTER_API_KEY: Optional[str] = None
-    LLM_MODEL: str = "meta-llama/llama-3-8b-instruct:free"
+    LLM_MODEL: str = "openai/gpt-oss-20b:free"
 
     # Embeddings (Phase 9)
     EMBEDDING_PROVIDER: str = "local"   # "local" | "openai" | "stub"
