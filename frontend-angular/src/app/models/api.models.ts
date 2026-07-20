@@ -131,3 +131,21 @@ export interface PaperGraphResponse {
   nodes: PaperGraphNode[];
   edges: PaperGraphEdge[];
 }
+
+export interface CitationGraphPaper {
+  paper_id: string;
+  title?: string | null;
+  name?: string | null;
+  year?: number | null;
+  is_stub: boolean;
+}
+
+export interface CitationGraphEdge {
+  source: string;
+  target: string;
+}
+
+export interface CitationGraphResponse {
+  papers: CitationGraphPaper[];
+  edges: CitationGraphEdge[];
+}

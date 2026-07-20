@@ -7,6 +7,7 @@ import { ChatComponent } from './components/chat/chat.component';
 import { RecentTasksComponent } from './components/recent-tasks/recent-tasks.component';
 import { GraphQueryComponent } from './components/graph-query/graph-query.component';
 import { PaperGraphComponent } from './components/paper-graph/paper-graph.component';
+import { CitationExplorerComponent } from './components/citation-explorer/citation-explorer.component';
 
 @Component({
   selector: 'app-root',
@@ -19,7 +20,8 @@ import { PaperGraphComponent } from './components/paper-graph/paper-graph.compon
     ChatComponent,
     RecentTasksComponent,
     GraphQueryComponent,
-    PaperGraphComponent
+    PaperGraphComponent,
+    CitationExplorerComponent
   ],
   template: `
     <app-header />
@@ -41,6 +43,7 @@ import { PaperGraphComponent } from './components/paper-graph/paper-graph.compon
             <app-graph-query (viewPaperGraph)="onViewPaperGraph($event)" />
           </div>
         </div>
+        <app-citation-explorer (viewPaperGraph)="onViewPaperGraph($event)" />
       </div>
     </main>
 
@@ -76,6 +79,11 @@ import { PaperGraphComponent } from './components/paper-graph/paper-graph.compon
       display: flex;
       flex-direction: column;
       gap: 1.5rem;
+    }
+
+    app-citation-explorer {
+      display: block;
+      margin-top: 1.5rem;
     }
 
     .footer {

@@ -162,6 +162,26 @@ class GraphRepository:
     # Read operations  -- citation graph
     # ------------------------------------------------------------------
 
+    def get_citation_graph(self) -> Dict[str, Any]:
+        """
+        Return every paper (real or stub) and every CITES edge between them --
+        the whole cross-paper citation network, for a global graph explorer
+        rather than one paper's immediate neighborhood.
+
+        Returns ``{"papers": [...], "edges": [...]}``. Each paper has
+        ``paper_id``/``title``/``name``/``year``/``is_stub``; each edge has
+        ``source``/``target`` paper_ids.
+        """
+        papers = self._client.query(
+            "MATCH (p:Paper) RETURN p.paper_id AS paper_id, p.title AS title, "
+            "p.name AS name, p.year AS year, p.is_stub AS is_stub"
+        )
+        edges = self._client.query(
+            "MATCH (a:Paper)-[:CITES]->(b:Paper) "
+            "RETURN a.paper_id AS source, b.paper_id AS target"
+        )
+        return {"papers": papers, "edges": edges}
+
     def find_papers_citing(self, paper_id: str) -> List[Dict[str, Any]]:
         """Papers that cite the given paper (backward traversal)."""
         cypher = (

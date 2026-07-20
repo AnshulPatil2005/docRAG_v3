@@ -52,6 +52,11 @@ async def _get_paper_graph(paper_id):
         return await ac.get(f"/api/v1/papers/{paper_id}/graph")
 
 
+async def _get_citation_graph():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        return await ac.get("/api/v1/citation-graph")
+
+
 class TestGraphQueryEndpoint:
     @pytest.mark.asyncio
     async def test_returns_answer_sources_and_trace(self):
@@ -183,5 +188,36 @@ class TestPaperGraphEndpoint:
         app.dependency_overrides[get_graph_repository] = lambda: mock_repo
 
         response = await _get_paper_graph("p1")
+
+        assert response.status_code == 503
+
+
+class TestCitationGraphEndpoint:
+    @pytest.mark.asyncio
+    async def test_returns_papers_and_edges(self):
+        mock_repo = MagicMock()
+        mock_repo.get_citation_graph.return_value = {
+            "papers": [
+                {"paper_id": "p1", "title": "Paper One", "name": "Paper One", "year": 2021, "is_stub": False},
+                {"paper_id": "p2", "title": "Paper Two", "name": "Paper Two", "year": 2022, "is_stub": False},
+            ],
+            "edges": [{"source": "p2", "target": "p1"}],
+        }
+        app.dependency_overrides[get_graph_repository] = lambda: mock_repo
+
+        response = await _get_citation_graph()
+
+        assert response.status_code == 200
+        body = response.json()
+        assert len(body["papers"]) == 2
+        assert body["edges"] == [{"source": "p2", "target": "p1"}]
+
+    @pytest.mark.asyncio
+    async def test_graph_store_failure_returns_503(self):
+        mock_repo = MagicMock()
+        mock_repo.get_citation_graph.side_effect = ConnectionError("neo4j down")
+        app.dependency_overrides[get_graph_repository] = lambda: mock_repo
+
+        response = await _get_citation_graph()
 
         assert response.status_code == 503

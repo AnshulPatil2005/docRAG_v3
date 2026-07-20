@@ -11,6 +11,7 @@ import {
   GraphQueryRequest,
   GraphQueryResponse,
   PaperGraphResponse,
+  CitationGraphResponse,
   LlmStatus
 } from '../models/api.models';
 
@@ -150,6 +151,12 @@ export class ApiService {
 
   getPaperGraph(paperId: string): Observable<PaperGraphResponse> {
     return this.http.get<PaperGraphResponse>(`${this.apiUrl()}/api/v1/papers/${paperId}/graph`).pipe(
+      catchError(this.handleError)
+    );
+  }
+
+  getCitationGraph(): Observable<CitationGraphResponse> {
+    return this.http.get<CitationGraphResponse>(`${this.apiUrl()}/api/v1/citation-graph`).pipe(
       catchError(this.handleError)
     );
   }

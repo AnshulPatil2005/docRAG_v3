@@ -162,6 +162,24 @@ async def graph_query(
     }
 
 
+@router.get("/citation-graph")
+async def get_citation_graph(
+    graph_repo: GraphRepository = Depends(get_graph_repository),
+):
+    """
+    Return the whole cross-paper citation network (every ingested paper,
+    real or stub, plus every CITES edge) -- for a global graph explorer,
+    as opposed to GET /papers/{paper_id}/graph's single-paper neighborhood.
+    """
+    try:
+        return graph_repo.get_citation_graph()
+    except Exception as exc:
+        logger.error("citation_graph_fetch_failed", error=str(exc))
+        raise HTTPException(
+            status_code=503, detail="Graph store is currently unavailable"
+        ) from exc
+
+
 @router.get("/papers/{paper_id}/graph")
 async def get_paper_graph(
     paper_id: str,
