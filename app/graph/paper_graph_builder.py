@@ -60,6 +60,8 @@ class PaperGraphBuilder:
         entities: Optional[List[Dict[str, str]]] = None,
         relations: Optional[List[Dict[str, str]]] = None,
         citations: Optional[List[Dict[str, Any]]] = None,
+        arxiv_id: Optional[str] = None,
+        doi: Optional[str] = None,
     ) -> Dict[str, List]:
         """
         Build a paper knowledge graph.
@@ -76,6 +78,10 @@ class PaperGraphBuilder:
         relations : optional list[{"source": str, "source_type": str, "relation": str,
                                     "target": str, "target_type": str, "evidence": str}]
         citations : optional list[normalised reference dicts from CitationNormalizer]
+        arxiv_id, doi : optional str
+            This paper's own arXiv ID / DOI (not a cited paper's), if the
+            parser found one -- lets ``GraphRepository.resolve_citation_stub``
+            rewire any pre-existing stub for this paper to the real node.
 
         Returns
         -------
@@ -91,7 +97,7 @@ class PaperGraphBuilder:
         edges: List[Edge] = []
 
         # 1. Paper node
-        paper_node = self._make_paper_node(paper_id, title, abstract, authors, year)
+        paper_node = self._make_paper_node(paper_id, title, abstract, authors, year, arxiv_id, doi)
         nodes.append(paper_node)
 
         # 2. Author nodes  +  WRITTEN_BY edges
@@ -177,6 +183,8 @@ class PaperGraphBuilder:
         abstract: Optional[str],
         authors: List[str],
         year: Optional[int],
+        arxiv_id: Optional[str] = None,
+        doi: Optional[str] = None,
     ) -> Node:
         props: Dict[str, Any] = {}
         if title:
@@ -187,6 +195,10 @@ class PaperGraphBuilder:
             props["year"] = year
         if authors:
             props["author_names"] = authors
+        if arxiv_id:
+            props["arxiv_id"] = arxiv_id
+        if doi:
+            props["doi"] = doi
         props["is_stub"] = False
 
         return Node(

@@ -261,6 +261,8 @@ class PaperIngestionPipeline:
                 entities=entities,
                 relations=relations,
                 citations=citations,
+                arxiv_id=parsed.arxiv_id,
+                doi=parsed.doi,
             )
 
         graph_step = self._run_step("GRAPH_BUILD", _do_build_graph)
@@ -280,8 +282,9 @@ class PaperIngestionPipeline:
                 result.graph_nodes_count = store_step.data.get("nodes_stored", 0)
                 result.graph_edges_count = store_step.data.get("edges_stored", 0)
 
-            # Attempt citation-stub resolution
-            self._try_resolve_stubs(paper_id, citations)
+            # Attempt citation-stub resolution (both directions -- see
+            # _try_resolve_stubs)
+            self._try_resolve_stubs(paper_id, parsed, citations)
 
         elif self._graph_repo is None:
             result.steps.append(StepResult(
@@ -406,26 +409,59 @@ class PaperIngestionPipeline:
     # Citation stub resolution
     # ------------------------------------------------------------------
 
-    def _try_resolve_stubs(self, paper_id: str, citations: List[Dict]) -> None:
+    def _try_resolve_stubs(self, paper_id: str, parsed, citations: List[Dict]) -> None:
         """
-        After storing a paper, check whether any previously-created citation
-        stubs can now point to this real paper.
+        Resolve citation stubs in both possible ingestion orders:
+
+        1. **Cited-paper-arrives-later**: an earlier-ingested paper already
+           cited *this* paper, creating a stub for it keyed by DOI/arXiv ID.
+           If this paper's own identity -- extracted by the parser from its
+           first page, not from its citations -- matches that stub, rewire
+           it to the real node just stored.
+        2. **Citing-paper-arrives-later**: this paper cites another paper
+           that already exists as a real (non-stub) node. Its graph was
+           just built with a fresh stub for that citation (since
+           ``PaperGraphBuilder`` has no Neo4j access to know better) --
+           resolve that stub to the existing real node immediately instead
+           of leaving a redundant stub alongside it.
+
+        Direction 1 uses ``parsed.doi`` / ``parsed.arxiv_id`` (this paper's
+        own identifiers) -- never this paper's citations, which would
+        resolve stubs representing papers *it* cites, not itself, silently
+        corrupting the graph (rewiring this paper's own outgoing CITES edge
+        into a self-loop and deleting the stub for the paper it actually
+        cites -- see docs/decisions.md).
         """
-        if not self._graph_repo or not citations:
+        if not self._graph_repo:
             return
+
+        # 1. Does this paper's own identity resolve a pre-existing stub?
+        self_doi = getattr(parsed, "doi", None)
+        self_arxiv_id = getattr(parsed, "arxiv_id", None)
         try:
-            for cit in citations:
-                doi = cit.get("doi")
-                arxiv_id = cit.get("arxiv_id")
-                if doi:
-                    self._graph_repo.resolve_citation_stub(
-                        f"doi_{doi.lower()}", paper_id
-                    )
-                if arxiv_id:
-                    self._graph_repo.resolve_citation_stub(
-                        f"arxiv_{arxiv_id.lower()}", paper_id
-                    )
+            if self_doi:
+                self._graph_repo.resolve_citation_stub(f"doi_{self_doi.lower()}", paper_id)
+            if self_arxiv_id:
+                self._graph_repo.resolve_citation_stub(f"arxiv_{self_arxiv_id.lower()}", paper_id)
         except Exception as exc:
             logger.warning(
                 "stub_resolution_failed", paper_id=paper_id, error=str(exc)
             )
+
+        # 2. Do any of this paper's citations already have a real node?
+        for cit in citations:
+            cit_doi = cit.get("doi")
+            cit_arxiv_id = cit.get("arxiv_id")
+            try:
+                if cit_doi:
+                    real_id = self._graph_repo.find_real_paper_id(doi=cit_doi)
+                    if real_id and real_id != paper_id:
+                        self._graph_repo.resolve_citation_stub(f"doi_{cit_doi.lower()}", real_id)
+                if cit_arxiv_id:
+                    real_id = self._graph_repo.find_real_paper_id(arxiv_id=cit_arxiv_id)
+                    if real_id and real_id != paper_id:
+                        self._graph_repo.resolve_citation_stub(f"arxiv_{cit_arxiv_id.lower()}", real_id)
+            except Exception as exc:
+                logger.warning(
+                    "cited_paper_stub_resolution_failed", paper_id=paper_id, error=str(exc)
+                )

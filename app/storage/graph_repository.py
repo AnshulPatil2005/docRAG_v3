@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional
 import structlog
 
 from app.graph.ontology import Node, Edge
-from app.storage.neo4j_client import Neo4jClient, NODE_KEY_MAP
+from app.storage.neo4j_client import Neo4jClient
 
 logger = structlog.get_logger()
 
@@ -50,15 +50,11 @@ class GraphRepository:
         # --- nodes ---
         for node in nodes:
             try:
-                key_prop = NODE_KEY_MAP.get(node.node_type)
-                if not key_prop:
-                    logger.warning("skip_unknown_label", label=node.node_type, id=node.node_id)
-                    continue
-
-                # Build the full property dict that Neo4j will store.
-                # The key property holds the *node_id* so MERGE can find it.
+                # node_id is the MERGE anchor (see Neo4jClient.merge_node);
+                # name/paper_id are stored as ordinary, indexed properties
+                # for retrieval lookups, not identity.
                 props: Dict[str, Any] = {
-                    key_prop: node.node_id,
+                    "node_id": node.node_id,
                     "name": node.name,
                     "paper_id": node.paper_id,
                 }
@@ -72,16 +68,6 @@ class GraphRepository:
         # --- edges (must come after nodes so MATCH can find them) ---
         for edge in edges:
             try:
-                src_key = NODE_KEY_MAP.get(edge.source_type)
-                tgt_key = NODE_KEY_MAP.get(edge.target_type)
-                if not src_key or not tgt_key:
-                    logger.warning(
-                        "edge_skip_no_key",
-                        src=edge.source_type,
-                        tgt=edge.target_type,
-                    )
-                    continue
-
                 edge_props: Dict[str, Any] = {"confidence": edge.confidence}
                 if edge.evidence:
                     edge_props["evidence"] = edge.evidence
@@ -89,10 +75,10 @@ class GraphRepository:
 
                 self._client.merge_edge(
                     source_label=edge.source_type,
-                    source_key_prop=src_key,
+                    source_key_prop="node_id",
                     source_key_value=edge.source_id,
                     target_label=edge.target_type,
-                    target_key_prop=tgt_key,
+                    target_key_prop="node_id",
                     target_key_value=edge.target_id,
                     edge_type=edge.edge_type,
                     edge_properties=edge_props,
@@ -147,8 +133,7 @@ class GraphRepository:
             if not props:
                 return None
             label = labels[0] if labels else "Entity"
-            key_prop = NODE_KEY_MAP.get(label, "name")
-            node_id = props.get(key_prop)
+            node_id = props.get("node_id")
             if node_id is not None and node_id not in nodes:
                 nodes[node_id] = {"id": node_id, "type": label, **dict(props)}
             return node_id
@@ -302,6 +287,34 @@ class GraphRepository:
     # Citation stub resolution
     # ------------------------------------------------------------------
 
+    def find_real_paper_id(
+        self, doi: Optional[str] = None, arxiv_id: Optional[str] = None,
+    ) -> Optional[str]:
+        """
+        Look up an already-ingested (non-stub) paper by its self-identity.
+
+        Used for the "real paper ingested first, citing paper arrives
+        later" ordering: when paper Y is ingested and cites X by DOI/arXiv
+        ID, if X already exists as a real node this finds its paper_id so
+        the stub ``_make_citation_pair`` would otherwise create for X can
+        be resolved to it immediately instead.
+        """
+        if doi:
+            rows = self._client.query(
+                "MATCH (p:Paper {doi: $doi, is_stub: False}) "
+                "RETURN p.paper_id AS pid LIMIT 1",
+                {"doi": doi},
+            )
+        elif arxiv_id:
+            rows = self._client.query(
+                "MATCH (p:Paper {arxiv_id: $arxiv_id, is_stub: False}) "
+                "RETURN p.paper_id AS pid LIMIT 1",
+                {"arxiv_id": arxiv_id},
+            )
+        else:
+            return None
+        return rows[0]["pid"] if rows else None
+
     def resolve_citation_stub(
         self, stub_paper_id: str, real_paper_id: str
     ) -> None:
@@ -311,6 +324,14 @@ class GraphRepository:
 
         Called automatically by ``PaperIngestionPipeline`` after storing a
         new paper, in case previously-ingested papers cited it via a stub.
+
+        Guards against self-citation: a paper should never end up CITES-ing
+        itself, which is what a wrong ``real_paper_id`` (e.g. accidentally
+        passing the citing paper's own id instead of the paper it cites)
+        would otherwise produce, deleting the stub in the process. This is
+        a defense-in-depth check -- the real fix is calling this with the
+        correct arguments in the first place (see
+        ``PaperIngestionPipeline._try_resolve_stubs``).
         """
         cypher = """
         // Find the stub (must be marked is_stub)
@@ -318,8 +339,11 @@ class GraphRepository:
         // Find the real paper
         MATCH (real:Paper {paper_id: $real_pid})
         WHERE stub <> real
-        // For every paper that CITES the stub, create a CITES to the real
+        // For every OTHER paper that CITES the stub, create a CITES to the
+        // real paper -- excluding the real paper itself, so this can never
+        // produce a self-loop.
         OPTIONAL MATCH (citer:Paper)-[r:CITES]->(stub)
+        WHERE citer <> real
         FOREACH (_ IN CASE WHEN citer IS NOT NULL THEN [1] ELSE [] END |
             MERGE (citer)-[:CITES]->(real)
         )
