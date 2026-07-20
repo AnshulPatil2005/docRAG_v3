@@ -30,6 +30,7 @@ Risk Mitigations Addressed
 
 from __future__ import annotations
 
+import uuid
 from typing import Any, Dict, List, Optional
 
 import structlog
@@ -39,6 +40,18 @@ from app.storage.qdrant_client import QdrantClientWrapper
 from qdrant_client.http import models as qmodels
 
 logger = structlog.get_logger()
+
+# Qdrant point IDs must be an unsigned integer or a UUID -- an arbitrary
+# string like "<paper_id>__chunk_00000" is rejected outright (400 "did not
+# match any variant of untagged enum PointInsertOperations"). uuid5 gives a
+# deterministic UUID from that same string, so re-ingesting a paper still
+# produces the same point IDs; the human-readable form is kept in the
+# payload's "chunk_id" field for debugging.
+_POINT_ID_NAMESPACE = uuid.UUID("c9a646d3-9c61-4d59-8a97-8fdaf6f26f6f")
+
+
+def _chunk_point_id(chunk_id: str) -> str:
+    return str(uuid.uuid5(_POINT_ID_NAMESPACE, chunk_id))
 
 
 class VectorRepository:
@@ -138,16 +151,17 @@ class VectorRepository:
             )
             deleted_estimate = 0
 
-        point_ids = [
+        chunk_ids = [
             f"{paper_id}__chunk_{i:05d}" for i in range(len(chunks))
         ]
 
         # Build Qdrant PointStructs
         points: List[qmodels.PointStruct] = []
-        for pid, vec, chunk in zip(point_ids, vectors, chunks):
+        for chunk_id, vec, chunk in zip(chunk_ids, vectors, chunks):
             payload: Dict[str, Any] = {
                 "paper_id": paper_id,
                 "text": chunk["text"],
+                "chunk_id": chunk_id,
             }
             # Attach optional metadata fields
             for meta_key in (
@@ -159,7 +173,7 @@ class VectorRepository:
 
             points.append(
                 qmodels.PointStruct(
-                    id=pid,
+                    id=_chunk_point_id(chunk_id),
                     vector=vec,
                     payload=payload,
                 )

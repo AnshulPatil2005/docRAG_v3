@@ -10,6 +10,8 @@ Covers:
 - Empty input handling
 """
 
+import uuid
+
 import pytest
 from unittest.mock import patch, MagicMock, call
 
@@ -46,8 +48,19 @@ class TestStorePaperChunks:
         # Verify upserted points have correct structure
         points = mock_qdrant.upsert.call_args[0][1]
         assert len(points) == 2
-        assert points[0].id == "paper-1__chunk_00000"
-        assert points[1].id == "paper-1__chunk_00001"
+        # Qdrant point IDs must be an unsigned int or a UUID -- a raw string
+        # like "paper-1__chunk_00000" is rejected by the server (400
+        # "PointInsertOperations"), so ids must be valid UUID strings...
+        assert uuid.UUID(str(points[0].id))
+        assert uuid.UUID(str(points[1].id))
+        assert points[0].id != points[1].id
+        # ...deterministic from the same (paper_id, index) pair...
+        assert points[0].id == str(uuid.uuid5(
+            uuid.UUID("c9a646d3-9c61-4d59-8a97-8fdaf6f26f6f"), "paper-1__chunk_00000"
+        ))
+        # ...with the human-readable identifier kept in the payload instead.
+        assert points[0].payload["chunk_id"] == "paper-1__chunk_00000"
+        assert points[1].payload["chunk_id"] == "paper-1__chunk_00001"
         assert points[0].payload["paper_id"] == "paper-1"
         assert points[0].payload["section"] == "Abstract"
         assert points[0].payload["page"] == 1
