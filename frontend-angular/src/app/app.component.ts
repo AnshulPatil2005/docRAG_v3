@@ -3,11 +3,9 @@ import { CommonModule } from '@angular/common';
 import { HeaderComponent } from './components/header/header.component';
 import { UploadComponent } from './components/upload/upload.component';
 import { StatusComponent } from './components/status/status.component';
-import { ChatComponent } from './components/chat/chat.component';
 import { RecentTasksComponent } from './components/recent-tasks/recent-tasks.component';
-import { GraphQueryComponent } from './components/graph-query/graph-query.component';
-import { PaperGraphComponent } from './components/paper-graph/paper-graph.component';
-import { CitationExplorerComponent } from './components/citation-explorer/citation-explorer.component';
+import { AskComponent } from './components/ask/ask.component';
+import { ExploreComponent } from './components/explore/explore.component';
 
 @Component({
   selector: 'app-root',
@@ -17,33 +15,23 @@ import { CitationExplorerComponent } from './components/citation-explorer/citati
     HeaderComponent,
     UploadComponent,
     StatusComponent,
-    ChatComponent,
     RecentTasksComponent,
-    GraphQueryComponent,
-    PaperGraphComponent,
-    CitationExplorerComponent
+    AskComponent,
+    ExploreComponent
   ],
   template: `
     <app-header />
 
     <main class="main-content">
       <div class="container">
-        <div class="grid">
-          <div class="grid-col">
-            <app-upload (taskUploaded)="onTaskUploaded($event)" />
-            <app-status #statusComponent />
-            <app-paper-graph #paperGraphComponent />
-          </div>
-          <div class="grid-col">
-            <app-chat #chatComponent />
-            <app-recent-tasks
-              (checkStatus)="onCheckStatus($event)"
-              (useInChat)="onUseInChat($event)"
-            />
-            <app-graph-query (viewPaperGraph)="onViewPaperGraph($event)" />
-          </div>
-        </div>
-        <app-citation-explorer (viewPaperGraph)="onViewPaperGraph($event)" />
+        <app-upload (taskUploaded)="onTaskUploaded($event)" />
+        <app-recent-tasks
+          (checkStatus)="onCheckStatus($event)"
+          (useInChat)="onUseInChat($event)"
+        />
+        <app-status #statusComponent />
+        <app-ask #askComponent (viewPaperGraph)="onViewPaperGraph($event)" />
+        <app-explore #exploreComponent />
       </div>
     </main>
 
@@ -65,25 +53,11 @@ import { CitationExplorerComponent } from './components/citation-explorer/citati
     }
 
     .container {
-      max-width: 1200px;
+      max-width: 860px;
       margin: 0 auto;
-    }
-
-    .grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 1.5rem;
-    }
-
-    .grid-col {
       display: flex;
       flex-direction: column;
       gap: 1.5rem;
-    }
-
-    app-citation-explorer {
-      display: block;
-      margin-top: 1.5rem;
     }
 
     .footer {
@@ -100,10 +74,6 @@ import { CitationExplorerComponent } from './components/citation-explorer/citati
     }
 
     @media (max-width: 900px) {
-      .grid {
-        grid-template-columns: 1fr;
-      }
-
       .main-content {
         padding: 1rem;
       }
@@ -112,13 +82,13 @@ import { CitationExplorerComponent } from './components/citation-explorer/citati
 })
 export class AppComponent {
   @ViewChild('statusComponent') statusComponent!: StatusComponent;
-  @ViewChild('chatComponent') chatComponent!: ChatComponent;
-  @ViewChild('paperGraphComponent') paperGraphComponent!: PaperGraphComponent;
+  @ViewChild('askComponent') askComponent!: AskComponent;
+  @ViewChild('exploreComponent') exploreComponent!: ExploreComponent;
 
   onTaskUploaded(event: { taskId: string; docId?: string }): void {
     this.statusComponent.setTaskId(event.taskId);
     if (event.docId) {
-      this.chatComponent.setDocId(event.docId);
+      this.askComponent.setDocId(event.docId);
     }
   }
 
@@ -127,10 +97,10 @@ export class AppComponent {
   }
 
   onUseInChat(docId: string): void {
-    this.chatComponent.setDocId(docId);
+    this.askComponent.setDocId(docId);
   }
 
   onViewPaperGraph(paperId: string): void {
-    this.paperGraphComponent.setPaperId(paperId);
+    this.exploreComponent.setPaperId(paperId);
   }
 }

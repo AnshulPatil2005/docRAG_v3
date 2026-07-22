@@ -70,13 +70,15 @@ def upsert_vectors(collection_name: str, embeddings_data: list):
 def search_vectors(query_vector: list, top_k: int = 5, doc_id: str = None):
     client = get_client()
     collection_name = settings.QDRANT_COLLECTION_NAME
-    
+
+    # Chunks are stored keyed by "paper_id" (see VectorRepository), not
+    # "doc_id" -- filtering on the wrong key silently matched nothing.
     query_filter = None
     if doc_id:
         query_filter = models.Filter(
             must=[
                 models.FieldCondition(
-                    key="doc_id",
+                    key="paper_id",
                     match=models.MatchValue(value=doc_id)
                 )
             ]

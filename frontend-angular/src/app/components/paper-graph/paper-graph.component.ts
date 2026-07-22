@@ -2,7 +2,7 @@ import { Component, inject, signal, computed, input, effect } from '@angular/cor
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
-import { PaperGraphResponse, PaperGraphNode } from '../../models/api.models';
+import { PaperGraphResponse, PaperGraphNode, CitationGraphPaper } from '../../models/api.models';
 
 interface PositionedNode extends PaperGraphNode {
   x: number;
@@ -33,25 +33,28 @@ const TYPE_COLORS: Record<string, string> = {
   standalone: true,
   imports: [CommonModule, FormsModule],
   template: `
-    <div class="card">
-      <h2>5. Paper Graph View</h2>
+    <div class="panel">
+      <p class="hint">
+        Shows one paper's internal graph -- its sections, and the methods,
+        datasets, and claims extracted from it.
+      </p>
 
       <div class="form-group">
-        <input
-          type="text"
-          [(ngModel)]="paperId"
-          placeholder="Paper ID (e.g. click a source paper above, or use an upload doc_id)"
-          class="input"
-        />
+        <select [(ngModel)]="paperId" (ngModelChange)="load()" class="input">
+          <option value="">Choose a paper...</option>
+          @for (paper of displayOptions(); track paper.paper_id) {
+            <option [value]="paper.paper_id">{{ paper.title || paper.name || paper.paper_id }}</option>
+          }
+        </select>
       </div>
 
-      <button
-        class="btn btn-secondary"
-        (click)="load()"
-        [disabled]="!paperId || isLoading()"
-      >
-        {{ isLoading() ? 'Loading...' : 'Load Graph' }}
-      </button>
+      @if (isLoading()) {
+        <p class="loading-text">Loading graph...</p>
+      }
+
+      @if (!isLoading() && graph() && positionedNodes().length === 0) {
+        <p class="loading-text">This paper has no graph data yet.</p>
+      }
 
       @if (graph() && positionedNodes().length > 0) {
         <div class="graph-wrap">
@@ -102,18 +105,14 @@ const TYPE_COLORS: Record<string, string> = {
     </div>
   `,
   styles: [`
-    .card {
-      background: #fff;
-      border: 1px solid #e0e0e0;
-      border-radius: 8px;
-      padding: 1.5rem;
+    .panel {
+      padding-top: 1rem;
     }
 
-    h2 {
-      margin: 0 0 1.25rem;
-      font-size: 1.125rem;
-      font-weight: 600;
-      color: #1a1a1a;
+    .hint {
+      margin: 0 0 1rem;
+      color: #666;
+      font-size: 0.8125rem;
     }
 
     h3 {
@@ -133,6 +132,8 @@ const TYPE_COLORS: Record<string, string> = {
       border: 1px solid #ccc;
       border-radius: 4px;
       font-size: 0.9375rem;
+      font-family: inherit;
+      background: #fff;
       box-sizing: border-box;
     }
 
@@ -141,29 +142,10 @@ const TYPE_COLORS: Record<string, string> = {
       border-color: #333;
     }
 
-    .btn {
-      padding: 0.625rem 1.25rem;
-      border: none;
-      border-radius: 4px;
-      font-size: 0.9375rem;
-      font-weight: 500;
-      cursor: pointer;
-      transition: background-color 0.2s;
-    }
-
-    .btn:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
-
-    .btn-secondary {
-      background: #f5f5f5;
-      color: #1a1a1a;
-      border: 1px solid #ddd;
-    }
-
-    .btn-secondary:hover:not(:disabled) {
-      background: #e8e8e8;
+    .loading-text {
+      color: #666;
+      font-size: 0.875rem;
+      margin: 0;
     }
 
     .graph-wrap {
@@ -259,6 +241,26 @@ export class PaperGraphComponent {
   isLoading = signal(false);
   graph = signal<PaperGraphResponse | null>(null);
   error = signal<string | null>(null);
+  paperOptions = signal<CitationGraphPaper[]>([]);
+
+  // The dropdown is populated from the citation graph, but a paper can
+  // arrive here (via a source-paper click elsewhere) before that list has
+  // loaded or been refreshed -- add it as a synthetic option so the select
+  // never silently shows blank for a paper that's actually loaded below.
+  //
+  // Deliberately a plain method, not a computed(): computed() only
+  // re-runs when a *signal* it reads changes, but paperId is a plain field
+  // (required for ngModel's two-way binding) that setPaperId() mutates
+  // directly -- a computed() here would go stale whenever a paper arrives
+  // programmatically instead of via the select itself.
+  displayOptions(): CitationGraphPaper[] {
+    const options = this.paperOptions();
+    const id = this.paperId;
+    if (id && !options.some(p => p.paper_id === id)) {
+      return [{ paper_id: id, title: id, is_stub: false }, ...options];
+    }
+    return options;
+  }
 
   positionedNodes = computed<PositionedNode[]>(() => {
     const g = this.graph();
@@ -286,6 +288,16 @@ export class PaperGraphComponent {
       if (id) {
         this.setPaperId(id);
       }
+    });
+    this.loadPaperOptions();
+  }
+
+  loadPaperOptions(): void {
+    this.apiService.getCitationGraph().subscribe({
+      next: (response) => {
+        this.paperOptions.set(response.papers.filter(p => !p.is_stub));
+      },
+      error: () => this.paperOptions.set([])
     });
   }
 

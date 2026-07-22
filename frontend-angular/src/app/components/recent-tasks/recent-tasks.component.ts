@@ -41,7 +41,7 @@ import { ApiService } from '../../services/api.service';
                   </button>
                   @if (task.doc_id) {
                     <button class="btn btn-sm btn-success" (click)="onUseInChat(task.doc_id)">
-                      Use in Chat
+                      Search this doc
                     </button>
                   }
                 </div>

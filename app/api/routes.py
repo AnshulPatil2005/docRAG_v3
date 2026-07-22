@@ -6,7 +6,7 @@ import aiofiles
 from typing import Optional
 from app.core.config import settings
 from app.worker.celery_app import celery_app
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
@@ -17,6 +17,13 @@ class ChatRequest(BaseModel):
     query: str
     doc_id: Optional[str] = None
     api_key: Optional[str] = None  # OpenRouter key, used if the server has none configured
+
+    @field_validator("query")
+    @classmethod
+    def query_must_not_be_blank(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("query must not be empty")
+        return v
 
 class ChatResponse(BaseModel):
     answer: str
@@ -46,10 +53,15 @@ async def chat(request: Request, body: ChatRequest):
         # Add to context
         context_text += f"---\n{text}\n"
 
+        # Chunks are stored keyed by "paper_id" (see VectorRepository) --
+        # there's no separate "doc_id"/"filename" field, but the paper_id
+        # *is* the doc_id, and it's also literally the on-disk filename
+        # (uploads are saved as "{doc_id}.pdf", see upload_pdf() below).
+        paper_id = payload.get("paper_id")
         citations.append({
-            "doc_id": payload.get("doc_id"),
+            "doc_id": paper_id,
             "page": payload.get("page"),
-            "filename": payload.get("filename"),
+            "filename": f"{paper_id}.pdf" if paper_id else None,
             "text_snippet": text[:100] + "..."
         })
 

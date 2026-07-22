@@ -24,9 +24,8 @@ interface PositionedPaper extends CitationGraphPaper {
   standalone: true,
   imports: [CommonModule, FormsModule],
   template: `
-    <div class="card">
-      <h2>6. Citation Graph Explorer</h2>
-      <p class="hint">Every ingested paper and the citation links between them.</p>
+    <div class="panel">
+      <p class="hint">Every ingested paper and the citation links between them. Click one to inspect it.</p>
 
       <div class="toolbar">
         <input
@@ -113,18 +112,8 @@ interface PositionedPaper extends CitationGraphPaper {
     </div>
   `,
   styles: [`
-    .card {
-      background: #fff;
-      border: 1px solid #e0e0e0;
-      border-radius: 8px;
-      padding: 1.5rem;
-    }
-
-    h2 {
-      margin: 0 0 0.5rem;
-      font-size: 1.125rem;
-      font-weight: 600;
-      color: #1a1a1a;
+    .panel {
+      padding-top: 1rem;
     }
 
     .hint {

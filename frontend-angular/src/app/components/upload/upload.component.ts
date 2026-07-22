@@ -10,7 +10,8 @@ import { UploadResponse } from '../../models/api.models';
   imports: [CommonModule, FormsModule],
   template: `
     <div class="card">
-      <h2>1. Upload PDF</h2>
+      <h2>Upload a document</h2>
+      <p class="hint">Add a PDF, then ask questions about it below once it's finished processing.</p>
 
       <div class="form-group">
         <div
@@ -80,10 +81,16 @@ import { UploadResponse } from '../../models/api.models';
     }
 
     h2 {
-      margin: 0 0 1.25rem;
+      margin: 0 0 0.5rem;
       font-size: 1.125rem;
       font-weight: 600;
       color: #1a1a1a;
+    }
+
+    .hint {
+      margin: 0 0 1.25rem;
+      color: #666;
+      font-size: 0.8125rem;
     }
 
     .form-group {

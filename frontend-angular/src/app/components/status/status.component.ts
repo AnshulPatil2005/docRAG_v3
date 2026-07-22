@@ -10,13 +10,14 @@ import { TaskStatus } from '../../models/api.models';
   imports: [CommonModule, FormsModule],
   template: `
     <div class="card">
-      <h2>2. Check Task Status</h2>
+      <h2>Check a task by ID</h2>
+      <p class="hint">Uploads made here already show their status below in "Recent Uploads" -- use this only if you have a task ID from somewhere else (e.g. a script).</p>
 
       <div class="form-group">
         <input
           type="text"
           [(ngModel)]="taskId"
-          placeholder="Enter task ID from upload"
+          placeholder="Enter task ID"
           class="input"
         />
       </div>
@@ -57,10 +58,16 @@ import { TaskStatus } from '../../models/api.models';
     }
 
     h2 {
-      margin: 0 0 1.25rem;
+      margin: 0 0 0.5rem;
       font-size: 1.125rem;
       font-weight: 600;
       color: #1a1a1a;
+    }
+
+    .hint {
+      margin: 0 0 1.25rem;
+      color: #666;
+      font-size: 0.8125rem;
     }
 
     .form-group {

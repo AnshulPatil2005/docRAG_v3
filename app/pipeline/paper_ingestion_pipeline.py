@@ -40,7 +40,7 @@ Risk Mitigations Addressed
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import structlog
 
@@ -299,7 +299,15 @@ class PaperIngestionPipeline:
 
         # ---- 8. Build Vector Chunks (non-critical) ----------------------
         def _do_chunking():
-            return self._build_vector_chunks(parsed, entities)
+            chunks = self._build_vector_chunks(parsed, entities)
+            if chunks:
+                return chunks
+            # No abstract/sections/entities were recognized (e.g. a plain
+            # document with none of the academic section headings the
+            # parser looks for) -- fall back to chunking the raw OCR text
+            # directly, so the document still ends up searchable instead
+            # of silently indexing zero chunks.
+            return self._build_raw_text_chunks(pages_text)
 
         chunk_step = self._run_step("CHUNKING", _do_chunking)
         result.steps.append(chunk_step)
@@ -402,6 +410,37 @@ class PaperIngestionPipeline:
                 "node_name": name,
                 "source_text": evidence,
             })
+
+        return chunks
+
+    @staticmethod
+    def _build_raw_text_chunks(raw_pages: List[Tuple[int, str]]) -> List[Dict[str, Any]]:
+        """
+        Fallback chunking over raw OCR page text, word-windowed by
+        ``CHUNK_TOKENS``/``CHUNK_OVERLAP_TOKENS``. Used only when structured
+        extraction (abstract/sections/entities) yields nothing to embed.
+        """
+        chunk_size = settings.CHUNK_TOKENS
+        overlap = settings.CHUNK_OVERLAP_TOKENS
+        chunks: List[Dict[str, Any]] = []
+
+        for page_num, text in raw_pages:
+            words = text.split()
+            if not words:
+                continue
+            i = 0
+            while i < len(words):
+                end = min(i + chunk_size, len(words))
+                chunk_str = " ".join(words[i:end])
+                chunks.append({
+                    "text": chunk_str,
+                    "section": "Raw Text",
+                    "node_type": "Section",
+                    "node_name": f"page_{page_num}",
+                    "source_text": chunk_str,
+                    "page": page_num,
+                })
+                i += (chunk_size - overlap) if chunk_size > overlap else 1
 
         return chunks
 
